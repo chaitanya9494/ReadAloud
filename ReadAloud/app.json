@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "Loudify",
+    "slug": "loudify",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "loudify",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#1a1a2e"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a1a2e"
+      },
+      "package": "com.loudify.app",
+      "intentFilters": [
+        {
+          "action": "SEND",
+          "category": ["DEFAULT"],
+          "data": [{ "mimeType": "text/plain" }]
+        },
+        {
+          "action": "PROCESS_TEXT",
+          "category": ["DEFAULT"],
+          "data": [{ "mimeType": "text/plain" }]
+        }
+      ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"]
+      }
+    },
+    "plugins": [
+      ["expo-router", { "root": "./app" }],
+      ["expo-splash-screen", {
+        "image": "./assets/splash.png",
+        "imageWidth": 1284,
+        "resizeMode": "cover",
+        "backgroundColor": "#1a1a2e"
+      }],
+      "expo-document-picker",
+      [
+        "expo-av",
+        {
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Loudify to use the camera to scan text from books and documents."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Loudify to access photos for text scanning."
+        }
+      ]
+    ]
+  }
+}
