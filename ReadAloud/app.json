@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "scheme": "loudify",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "cover",
@@ -22,30 +22,57 @@
       "intentFilters": [
         {
           "action": "SEND",
-          "category": ["DEFAULT"],
-          "data": [{ "mimeType": "text/plain" }]
+          "category": [
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ]
         },
         {
           "action": "PROCESS_TEXT",
-          "category": ["DEFAULT"],
-          "data": [{ "mimeType": "text/plain" }]
+          "category": [
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ]
         }
+      ],
+      "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "plugins": [
-      ["expo-router", { "root": "./app" }],
-      ["expo-splash-screen", {
-        "image": "./assets/splash.png",
-        "imageWidth": 1284,
-        "resizeMode": "cover",
-        "backgroundColor": "#1a1a2e"
-      }],
+      [
+        "expo-router",
+        {
+          "root": "./app"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 1284,
+          "resizeMode": "cover",
+          "backgroundColor": "#1a1a2e"
+        }
+      ],
       "expo-document-picker",
       [
         "expo-av",
@@ -65,6 +92,14 @@
           "photosPermission": "Allow Loudify to access photos for text scanning."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {
+        "root": "./app"
+      },
+      "eas": {
+        "projectId": "3d6dfe7e-734d-40a3-bd55-be90293fbb48"
+      }
+    }
   }
 }
