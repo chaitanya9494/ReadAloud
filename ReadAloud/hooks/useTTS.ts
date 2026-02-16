@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
+import { synthesize, playWav, stopPlayback } from '@/utils/piperTTS';
+import type { TTSEngine } from '@/utils/storage';
 
 interface TTSOptions {
   rate?: number;
@@ -9,6 +11,12 @@ interface TTSOptions {
   onWordChange?: (charIndex: number) => void;
   /** If true, attempt word-level callbacks (falls back to sentence-level) */
   wordLevel?: boolean;
+  /** TTS engine to use */
+  engine?: TTSEngine;
+  /** Piper voice model ID */
+  piperVoiceId?: string;
+  /** Piper server URL */
+  piperServerUrl?: string;
 }
 
 interface TTSState {
@@ -27,9 +35,9 @@ interface TTSState {
  * sequentially so we can track position, pause/resume, and
  * skip forward/back by sentence.
  *
- * When wordLevel is true, uses Speech boundary events (Android onBoundary)
- * to provide word-level highlight positions. Falls back to sentence-level
- * on devices that don't support it.
+ * Supports two engines:
+ * - 'system' (default): expo-speech with word-level boundary events
+ * - 'piper': Piper HTTP server — synthesizes WAV per sentence, plays via expo-av
  */
 export function useTTS(fullText: string, options: TTSOptions = {}) {
   const [state, setState] = useState<TTSState>({
@@ -45,6 +53,7 @@ export function useTTS(fullText: string, options: TTSOptions = {}) {
   const currentChunk = useRef(0);
   const isStopping = useRef(false);
   const optionsRef = useRef(options);
+  const piperCleanup = useRef<(() => void) | null>(null);
   optionsRef.current = options;
 
   useEffect(() => {
@@ -61,7 +70,53 @@ export function useTTS(fullText: string, options: TTSOptions = {}) {
     });
   }, [fullText]);
 
-  const speakChunk = useCallback((index: number) => {
+  // ── Piper engine: synthesize + play WAV per chunk ──
+  const speakChunkPiper = useCallback(async (index: number) => {
+    if (index >= chunks.current.length) {
+      setState((s) => ({ ...s, isPlaying: false, isPaused: false }));
+      return;
+    }
+
+    const chunk = chunks.current[index];
+    const opts = optionsRef.current;
+    currentChunk.current = index;
+
+    setState((s) => ({
+      ...s,
+      isPlaying: true,
+      isPaused: false,
+      chunkIndex: index,
+      currentIndex: chunk.startIndex,
+      wordCharIndex: chunk.startIndex,
+      wordLength: 0,
+    }));
+
+    opts.onWordChange?.(chunk.startIndex);
+
+    try {
+      const wavUri = await synthesize({
+        serverUrl: opts.piperServerUrl || 'http://localhost:5000',
+        voice: opts.piperVoiceId || 'en_US-lessac-medium',
+        text: chunk.text.trim(),
+        rate: opts.rate ?? 1.0,
+      });
+
+      if (isStopping.current) return;
+
+      piperCleanup.current = await playWav(wavUri, () => {
+        piperCleanup.current = null;
+        if (!isStopping.current) {
+          speakChunkPiper(index + 1);
+        }
+      });
+    } catch (err) {
+      console.warn('[PiperTTS] synthesis failed:', err);
+      setState((s) => ({ ...s, isPlaying: false, isPaused: false }));
+    }
+  }, []);
+
+  // ── System engine: expo-speech per chunk ──
+  const speakChunkSystem = useCallback((index: number) => {
     if (index >= chunks.current.length) {
       setState((s) => ({ ...s, isPlaying: false, isPaused: false }));
       return;
@@ -87,10 +142,8 @@ export function useTTS(fullText: string, options: TTSOptions = {}) {
       rate: opts.rate ?? 1.0,
       pitch: opts.pitch ?? 1.0,
       voice: opts.voice,
-      // Word-level boundary callback (Android 8+ supports this)
       onBoundary: opts.wordLevel
         ? (event: any) => {
-            // event contains charIndex and charLength relative to the spoken chunk
             if (event && typeof event.charIndex === 'number') {
               const absoluteIndex = chunk.startIndex + event.charIndex;
               const wordLen = event.charLength || 0;
@@ -105,17 +158,32 @@ export function useTTS(fullText: string, options: TTSOptions = {}) {
         : undefined,
       onDone: () => {
         if (!isStopping.current) {
-          speakChunk(index + 1);
+          speakChunkSystem(index + 1);
         }
       },
       onStopped: () => {},
-    } as any); // Cast needed because onBoundary isn't in expo-speech types yet
+    } as any);
   }, []);
+
+  const speakChunk = useCallback(
+    (index: number) => {
+      const engine = optionsRef.current.engine ?? 'system';
+      if (engine === 'piper') {
+        speakChunkPiper(index);
+      } else {
+        speakChunkSystem(index);
+      }
+    },
+    [speakChunkPiper, speakChunkSystem]
+  );
 
   const play = useCallback(
     (fromChunk?: number) => {
       isStopping.current = false;
+      // Stop both engines
       Speech.stop();
+      stopPlayback();
+      piperCleanup.current = null;
       const startAt = fromChunk ?? currentChunk.current;
       setTimeout(() => speakChunk(startAt), 50);
     },
@@ -138,6 +206,8 @@ export function useTTS(fullText: string, options: TTSOptions = {}) {
   const pause = useCallback(() => {
     isStopping.current = true;
     Speech.stop();
+    stopPlayback();
+    piperCleanup.current = null;
     setState((s) => ({ ...s, isPlaying: false, isPaused: true }));
   }, []);
 
@@ -158,6 +228,8 @@ export function useTTS(fullText: string, options: TTSOptions = {}) {
   const stop = useCallback(() => {
     isStopping.current = true;
     Speech.stop();
+    stopPlayback();
+    piperCleanup.current = null;
     currentChunk.current = 0;
     setState({
       isPlaying: false,
@@ -173,6 +245,7 @@ export function useTTS(fullText: string, options: TTSOptions = {}) {
     return () => {
       isStopping.current = true;
       Speech.stop();
+      stopPlayback();
     };
   }, []);
 

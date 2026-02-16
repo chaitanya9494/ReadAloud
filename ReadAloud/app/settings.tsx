@@ -13,13 +13,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { Spacing, FontSize } from '@/constants/theme';
 import { getSettings, saveSettings, AppSettings, DEFAULT_SETTINGS } from '@/utils/storage';
 import { useTheme } from '@/hooks/useTheme';
-import { friendlyVoiceName, friendlyLanguage, languageGroup } from '@/utils/voiceNames';
+import { friendlyVoiceName, friendlyLanguage, languageGroup, deduplicateVoices } from '@/utils/voiceNames';
 import { getSamplePhrase } from '@/utils/voiceSamples';
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [voices, setVoices] = useState<Speech.Voice[]>([]);
+  const [voices, setVoices] = useState<(Speech.Voice & { gender?: 'female' | 'male' })[]>([]);
   const [voiceSearch, setVoiceSearch] = useState('');
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export default function SettingsScreen() {
         setSettings(s);
         // Retry if voices are empty (Android sometimes needs a moment)
         if (v.length > 0) {
-          setVoices(v);
+          setVoices(deduplicateVoices(v));
           setLoadingVoices(false);
         } else {
           let retries = 0;
@@ -43,7 +43,7 @@ export default function SettingsScreen() {
             await new Promise((r) => setTimeout(r, 500));
             const retry = await Speech.getAvailableVoicesAsync();
             if (retry.length > 0) {
-              setVoices(retry);
+              setVoices(deduplicateVoices(retry));
               break;
             }
             retries++;
@@ -345,7 +345,7 @@ export default function SettingsScreen() {
                       />
                       <View style={{ flex: 1 }}>
                         <Text style={{ color: isSelected ? '#fff' : colors.text, fontWeight: '500' }}>
-                          {friendlyVoiceName(v.name, v.language)}
+                          {friendlyVoiceName(v.name, v.language, (v as any).gender)}
                         </Text>
                         <Text
                           style={{
@@ -498,5 +498,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: FontSize.sm,
     lineHeight: 20,
+  },
+  helperText: {
+    fontSize: FontSize.xs,
+    lineHeight: 18,
+    marginBottom: Spacing.sm,
   },
 });

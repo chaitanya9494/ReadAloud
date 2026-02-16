@@ -1,7 +1,6 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '@/hooks/useTheme';
-import { ProProvider } from '@/hooks/usePro';
 
 function AppStack() {
   const { colors, isDark } = useTheme();
@@ -22,7 +21,6 @@ function AppStack() {
         <Stack.Screen name="library" options={{ title: 'My Library' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="stats" options={{ title: 'Reading Stats' }} />
-        <Stack.Screen name="pro" options={{ title: 'Loudify Pro' }} />
       </Stack>
     </>
   );
@@ -31,9 +29,7 @@ function AppStack() {
 export default function RootLayout() {
   return (
     <ThemeProvider>
-      <ProProvider>
-        <AppStack />
-      </ProProvider>
+      <AppStack />
     </ThemeProvider>
   );
 }

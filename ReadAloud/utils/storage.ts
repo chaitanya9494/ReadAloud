@@ -25,6 +25,8 @@ export interface LibraryItem {
   bookmarks?: Bookmark[];
 }
 
+export type TTSEngine = 'system' | 'piper';
+
 export interface AppSettings {
   speechRate: number;
   speechPitch: number;
@@ -33,6 +35,12 @@ export interface AppSettings {
   fontSize: number;
   highlightColor: string;
   sleepTimerMinutes: number | null;
+  /** TTS engine: 'system' (expo-speech) or 'piper' (Piper HTTP server) */
+  ttsEngine: TTSEngine;
+  /** Piper voice model ID, e.g. "en_US-lessac-medium" */
+  piperVoiceId?: string;
+  /** Piper HTTP server URL */
+  piperServerUrl: string;
 }
 
 export interface ReadingStats {
@@ -50,6 +58,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 18,
   highlightColor: '#e94560',
   sleepTimerMinutes: null,
+  ttsEngine: 'system',
+  piperServerUrl: 'http://localhost:5000',
 };
 
 export const DEFAULT_STATS: ReadingStats = {

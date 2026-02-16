@@ -7,7 +7,7 @@ import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing, FontSize } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
-import { friendlyVoiceName, friendlyLanguage, languageGroup } from '@/utils/voiceNames';
+import { friendlyVoiceName, friendlyLanguage, languageGroup, deduplicateVoices } from '@/utils/voiceNames';
 import { getSamplePhrase } from '@/utils/voiceSamples';
 
 interface Props {
@@ -23,7 +23,7 @@ export default function VoicePickerModal({
   visible, currentVoiceId, speechRate, speechPitch, onSelect, onClose,
 }: Props) {
   const { colors } = useTheme();
-  const [voices, setVoices] = useState<Speech.Voice[]>([]);
+  const [voices, setVoices] = useState<(Speech.Voice & { gender?: 'female' | 'male' })[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export default function VoicePickerModal({
       while (retries < 5 && !cancelled) {
         const v = await Speech.getAvailableVoicesAsync();
         if (v.length > 0) {
-          if (!cancelled) { setVoices(v); setLoading(false); }
+          if (!cancelled) { setVoices(deduplicateVoices(v)); setLoading(false); }
           return;
         }
         retries++;
@@ -48,8 +48,8 @@ export default function VoicePickerModal({
     load();
     return () => { cancelled = true; };
   }, [visible]);
-
-  const previewVoice = useCallback((voiceId: string | undefined, lang: string) => {
+  const
+ previewVoice = useCallback((voiceId: string | undefined, lang: string) => {
     Speech.stop();
     const phrase = getSamplePhrase(lang);
     setPlayingId(voiceId ?? '__default');
@@ -72,7 +72,7 @@ export default function VoicePickerModal({
     );
   });
 
-  const grouped: Record<string, Speech.Voice[]> = {};
+  const grouped: Record<string, (Speech.Voice & { gender?: 'female' | 'male' })[]> = {};
   filtered.forEach((v) => {
     const lang = languageGroup(v.language);
     if (!grouped[lang]) grouped[lang] = [];
@@ -115,7 +115,6 @@ export default function VoicePickerModal({
             <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator
               keyboardShouldPersistTaps="handled">
 
-              {/* System Default */}
               <VoiceRow
                 name="System Default"
                 isSelected={!currentVoiceId}
@@ -133,7 +132,7 @@ export default function VoicePickerModal({
                   {grouped[lang].map((v) => (
                     <VoiceRow
                       key={v.identifier}
-                      name={friendlyVoiceName(v.name, v.language)}
+                      name={friendlyVoiceName(v.name, v.language, v.gender)}
                       subtitle={`${friendlyLanguage(v.language)} · ${v.quality === 'Enhanced' ? 'HD' : 'Standard'}`}
                       isSelected={currentVoiceId === v.identifier}
                       isPlaying={playingId === v.identifier}
@@ -167,7 +166,6 @@ export default function VoicePickerModal({
   );
 }
 
-/** Individual voice row with select + play button */
 function VoiceRow({ name, subtitle, isSelected, isPlaying, colors, onSelect, onPlay }: {
   name: string; subtitle?: string; isSelected: boolean; isPlaying: boolean;
   colors: any; onSelect: () => void; onPlay: () => void;

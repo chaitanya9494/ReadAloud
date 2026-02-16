@@ -10,12 +10,12 @@
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash.png",
-      "resizeMode": "cover",
+      "resizeMode": "contain",
       "backgroundColor": "#1a1a2e"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#1a1a2e"
       },
       "package": "com.loudify.app",
@@ -68,8 +68,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash.png",
-          "imageWidth": 1284,
-          "resizeMode": "cover",
+          "resizeMode": "contain",
           "backgroundColor": "#1a1a2e"
         }
       ],

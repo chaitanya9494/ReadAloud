@@ -8,12 +8,8 @@ import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing, FontSize } from '@/constants/theme';
 import FilePickerButton from '@/components/FilePickerButton';
-import UrlInput from '@/components/UrlInput';
-import OcrScannerButton from '@/components/OcrScannerButton';
-import ProGate from '@/components/ProGate';
 import { useLibrary } from '@/hooks/useLibrary';
 import { useTheme } from '@/hooks/useTheme';
-import { usePro, ProFeature } from '@/hooks/usePro';
 import { extractSharedText, getInitialSharedText } from '@/utils/shareIntent';
 
 export default function HomeScreen() {
@@ -22,8 +18,6 @@ export default function HomeScreen() {
   const params = useLocalSearchParams<{ sharedText?: string }>();
   const [inputText, setInputText] = useState('');
   const { addItem, items } = useLibrary();
-  const { isPro, checkFeature } = usePro();
-  const [gateFeature, setGateFeature] = useState<ProFeature | null>(null);
 
   // Handle shared text from other apps (query param)
   useEffect(() => {
@@ -58,16 +52,6 @@ export default function HomeScreen() {
 
   const handleFileLoaded = async (text: string, fileName: string) => {
     const item = await addItem(text, fileName, 'file', fileName);
-    router.push({ pathname: '/reader', params: { id: item.id } });
-  };
-
-  const handleUrlLoaded = async (text: string, title: string) => {
-    const item = await addItem(text, title, 'share');
-    router.push({ pathname: '/reader', params: { id: item.id } });
-  };
-
-  const handleOcrText = async (text: string, source: string) => {
-    const item = await addItem(text, source, 'paste');
     router.push({ pathname: '/reader', params: { id: item.id } });
   };
 
@@ -141,50 +125,8 @@ export default function HomeScreen() {
           <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
         </View>
 
-        {/* URL input — Pro feature */}
-        {isPro ? (
-          <UrlInput onTextLoaded={handleUrlLoaded} />
-        ) : (
-          <TouchableOpacity
-            onPress={() => setGateFeature('url_reading')}
-            style={[styles.proFeatureBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            accessibilityLabel="URL reading — Pro feature"
-            accessibilityRole="button"
-          >
-            <Ionicons name="globe-outline" size={20} color={colors.primary} />
-            <Text style={[styles.proFeatureBtnText, { color: colors.text }]}>Read from URL</Text>
-            <View style={[styles.proBadge, { backgroundColor: colors.primary + '15' }]}>
-              <Ionicons name="star" size={10} color={colors.primary} />
-              <Text style={[styles.proBadgeText, { color: colors.primary }]}>PRO</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* File picker + OCR row */}
-        <View style={styles.actionRow}>
-          <View style={{ flex: 1 }}>
-            <FilePickerButton onTextLoaded={handleFileLoaded} />
-          </View>
-          <View style={{ flex: 1 }}>
-            {isPro ? (
-              <OcrScannerButton onTextExtracted={handleOcrText} />
-            ) : (
-              <TouchableOpacity
-                onPress={() => setGateFeature('ocr_scanner')}
-                style={[styles.proFeatureBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.border, flex: 1 }]}
-                accessibilityLabel="Camera scanner — Pro feature"
-                accessibilityRole="button"
-              >
-                <Ionicons name="camera-outline" size={22} color={colors.primary} />
-                <Text style={[styles.proFeatureBtnText, { color: colors.text }]}>Scan Text</Text>
-                <View style={[styles.proBadge, { backgroundColor: colors.primary + '15' }]}>
-                  <Ionicons name="star" size={10} color={colors.primary} />
-                  <Text style={[styles.proBadgeText, { color: colors.primary }]}>PRO</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+        {/* File picker */}
+        <FilePickerButton onTextLoaded={handleFileLoaded} />
 
         {/* Recent items */}
         {recentItems.length > 0 && (
@@ -204,7 +146,7 @@ export default function HomeScreen() {
                 accessibilityRole="button"
               >
                 <Ionicons
-                  name={item.source === 'file' ? 'document-text' : item.source === 'share' ? 'globe-outline' : 'text'}
+                  name={item.source === 'file' ? 'document-text' : 'text'}
                   size={20}
                   color={colors.primary}
                 />
@@ -249,35 +191,7 @@ export default function HomeScreen() {
             <Text style={[styles.navLabel, { color: colors.text }]}>Settings</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Pro upgrade banner */}
-        {!isPro && (
-          <TouchableOpacity
-            onPress={() => router.push('/pro')}
-            style={[styles.proBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}
-            accessibilityLabel="Upgrade to Pro"
-            accessibilityRole="button"
-          >
-            <Ionicons name="rocket-outline" size={20} color={colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.proBannerTitle, { color: colors.text }]}>Unlock Pro</Text>
-              <Text style={[styles.proBannerSub, { color: colors.textSecondary }]}>
-                Background play, URL reading, camera scan, export & more
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
-          </TouchableOpacity>
-        )}
       </ScrollView>
-
-      {/* Pro gate modal */}
-      {gateFeature && (
-        <ProGate
-          visible={!!gateFeature}
-          feature={gateFeature}
-          onClose={() => setGateFeature(null)}
-        />
-      )}
     </KeyboardAvoidingView>
   );
 }
@@ -302,7 +216,6 @@ const styles = StyleSheet.create({
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: Spacing.lg, gap: Spacing.sm },
   dividerLine: { flex: 1, height: 1 },
   dividerText: { fontSize: FontSize.sm },
-  actionRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
   recentSection: { marginTop: Spacing.xl },
   recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
   sectionTitle: { fontSize: FontSize.lg, fontWeight: '600' },
@@ -320,20 +233,4 @@ const styles = StyleSheet.create({
     gap: Spacing.xs, padding: Spacing.md, borderRadius: 12, borderWidth: 1,
   },
   navLabel: { fontSize: FontSize.sm, fontWeight: '500' },
-  proFeatureBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing.sm, borderWidth: 1, borderRadius: 12, padding: Spacing.md,
-  },
-  proFeatureBtnText: { fontSize: FontSize.sm, fontWeight: '600' },
-  proBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10,
-  },
-  proBadgeText: { fontSize: 9, fontWeight: '800' },
-  proBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    padding: Spacing.md, borderRadius: 12, borderWidth: 1, marginTop: Spacing.lg,
-  },
-  proBannerTitle: { fontSize: FontSize.sm, fontWeight: '600' },
-  proBannerSub: { fontSize: FontSize.xs, marginTop: 1 },
 });

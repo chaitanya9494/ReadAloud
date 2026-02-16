@@ -54,18 +54,19 @@ export function friendlyLanguage(langCode: string): string {
 /**
  * Turn a raw voice name/identifier into something readable.
  * Android voices often have names like "bs-ba-x-bsm-local" —
- * we replace those with the friendly language name.
+ * we replace those with the friendly language name + gender.
  */
-export function friendlyVoiceName(name: string, language: string): string {
+export function friendlyVoiceName(name: string, language: string, gender?: 'female' | 'male'): string {
+  const genderLabel = gender === 'female' ? ' ♀' : gender === 'male' ? ' ♂' : '';
+
   // If the name looks like a locale code (contains dashes and no spaces), use the language instead
   if (/^[a-z]{2,3}-[A-Za-z]/.test(name) && !name.includes(' ')) {
     const friendly = friendlyLanguage(language);
-    // Check if it's a "local" (on-device) or "network" voice
-    if (name.includes('-local')) return `${friendly} · Offline`;
-    if (name.includes('-network')) return `${friendly} · Online`;
-    return friendly;
+    if (name.includes('-local')) return `${friendly}${genderLabel} · Offline`;
+    if (name.includes('-network')) return `${friendly}${genderLabel} · Online`;
+    return `${friendly}${genderLabel}`;
   }
-  return name;
+  return `${name}${genderLabel}`;
 }
 
 /** Get a sort-friendly language group name */
@@ -73,4 +74,107 @@ export function languageGroup(langCode: string): string {
   const clean = langCode.replace(/-x-.*$/, '');
   const parts = clean.split('-');
   return LANG_MAP[parts[0]] || parts[0].toUpperCase();
+}
+
+/**
+ * Android voice variant suffixes that typically correspond to
+ * different genders / voice personas. These are Google TTS engine
+ * internal codes — not documented, but consistent across devices.
+ *
+ * Female-leaning variants: sfg, tpd, tpc, iog
+ * Male-leaning variants:   tpf, sfb, iob, tpb
+ *
+ * We use these to pick one male + one female per locale.
+ */
+const FEMALE_VARIANTS = new Set(['sfg', 'tpd', 'tpc', 'iog', 'iol', 'tpl']);
+const MALE_VARIANTS = new Set(['tpf', 'sfb', 'iob', 'tpb', 'iom', 'tpm']);
+
+/** Extract the 3-letter variant code from an Android voice name/identifier */
+function getVariantCode(id: string): string | null {
+  // Pattern: lang-region-x-VARIANT-local/network  e.g. "en-us-x-sfg-local"
+  const match = id.match(/-x-([a-z]{3})-/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
+/** Guess gender from the variant code */
+function guessGender(id: string): 'female' | 'male' | 'unknown' {
+  const variant = getVariantCode(id);
+  if (!variant) return 'unknown';
+  if (FEMALE_VARIANTS.has(variant)) return 'female';
+  if (MALE_VARIANTS.has(variant)) return 'male';
+  return 'unknown';
+}
+
+function isLocal(voice: { identifier: string; name: string }): boolean {
+  return voice.identifier.includes('-local') || voice.name.includes('-local');
+}
+
+function isEnhanced(voice: { quality?: string }): boolean {
+  return voice.quality === 'Enhanced';
+}
+
+/** Compare two voices — returns true if `a` is better than `b` */
+function isBetter<T extends { identifier: string; name: string; quality?: string }>(a: T, b: T): boolean {
+  if (isEnhanced(a) && !isEnhanced(b)) return true;
+  if (!isEnhanced(a) && isEnhanced(b)) return false;
+  if (isLocal(a) && !isLocal(b)) return true;
+  return false;
+}
+
+/**
+ * Deduplicate voices from Speech.getAvailableVoicesAsync().
+ *
+ * Android returns many variants per language+region:
+ *   - local vs network (same voice, different delivery)
+ *   - multiple engine variants (-x-sfg, -x-tpc, etc.)
+ *
+ * Strategy:
+ *   1. iOS voices (human-readable names with spaces) are kept as-is
+ *   2. Android voices are grouped by base locale (e.g. "en-us")
+ *   3. Per locale, keep up to 2 voices: 1 female + 1 male
+ *   4. Prefer Enhanced quality, then local/offline over network
+ *   5. Label them with gender so the UI can show ♀ / ♂
+ */
+export function deduplicateVoices<T extends { identifier: string; language: string; name: string; quality?: string }>(
+  voices: T[]
+): (T & { gender?: 'female' | 'male' })[] {
+  const results: (T & { gender?: 'female' | 'male' })[] = [];
+
+  // iOS voices have human-readable names — keep all, they're already distinct
+  const iosVoices = voices.filter(v => v.name.includes(' '));
+  results.push(...iosVoices);
+
+  // Android voices — deduplicate to 1 male + 1 female per locale
+  const androidVoices = voices.filter(v => !v.name.includes(' '));
+
+  // Group by base locale
+  const localeMap = new Map<string, { female: T | null; male: T | null; fallback: T | null }>();
+
+  for (const voice of androidVoices) {
+    const baseLocale = voice.language.replace(/-x-.*$/, '').toLowerCase();
+    if (!localeMap.has(baseLocale)) {
+      localeMap.set(baseLocale, { female: null, male: null, fallback: null });
+    }
+    const group = localeMap.get(baseLocale)!;
+    const gender = guessGender(voice.identifier || voice.name);
+
+    if (gender === 'female') {
+      if (!group.female || isBetter(voice, group.female)) group.female = voice;
+    } else if (gender === 'male') {
+      if (!group.male || isBetter(voice, group.male)) group.male = voice;
+    } else {
+      if (!group.fallback || isBetter(voice, group.fallback)) group.fallback = voice;
+    }
+  }
+
+  for (const group of localeMap.values()) {
+    if (group.female) results.push({ ...group.female, gender: 'female' });
+    if (group.male) results.push({ ...group.male, gender: 'male' });
+    // If we couldn't determine gender for any voice in this locale, keep the best fallback
+    if (!group.female && !group.male && group.fallback) {
+      results.push({ ...group.fallback });
+    }
+  }
+
+  return results;
 }

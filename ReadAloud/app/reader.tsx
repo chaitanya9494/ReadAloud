@@ -7,14 +7,11 @@ import TextDisplay from '@/components/TextDisplay';
 import PlayerControls from '@/components/PlayerControls';
 import SleepTimerModal from '@/components/SleepTimerModal';
 import BookmarksPanel from '@/components/BookmarksPanel';
-import ExportModal from '@/components/ExportModal';
 import VoicePickerModal from '@/components/VoicePickerModal';
-import ProGate from '@/components/ProGate';
 import { useTTS } from '@/hooks/useTTS';
 import { useSleepTimer } from '@/hooks/useSleepTimer';
 import { useBackgroundAudio } from '@/hooks/useBackgroundAudio';
 import { useTheme } from '@/hooks/useTheme';
-import { usePro, ProFeature } from '@/hooks/usePro';
 import {
   getLibrary, saveLibraryItem, getSettings, saveSettings,
   addBookmark, removeBookmark,
@@ -38,11 +35,8 @@ export default function ReaderScreen() {
   const [voiceLabel, setVoiceLabel] = useState('System Default');
   const [showSleepTimer, setShowSleepTimer] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
-  const [showExport, setShowExport] = useState(false);
   const [showVoicePicker, setShowVoicePicker] = useState(false);
   const [detectedLang, setDetectedLang] = useState<string>('');
-  const [gateFeature, setGateFeature] = useState<ProFeature | null>(null);
-  const { isPro } = usePro();
   const sessionStart = useRef<number | null>(null);
   const wordsAtStart = useRef(0);
 
@@ -74,10 +68,9 @@ export default function ReaderScreen() {
       setSpeechRate(s.speechRate);
       setCurrentVoiceId(s.voiceId);
 
-      // Resolve voice label
       if (s.voiceId) {
         const v = voices.find((v) => v.identifier === s.voiceId);
-        if (v) setVoiceLabel(friendlyVoiceName(v.name, v.language));
+        if (v) setVoiceLabel(friendlyVoiceName(v.name, v.language, undefined));
       }
     })();
   }, [id]);
@@ -92,8 +85,8 @@ export default function ReaderScreen() {
     onWordChange: (charIndex) => setHighlightIndex(charIndex),
   });
 
-  // Background audio — Pro feature
-  useBackgroundAudio(isPro && tts.isPlaying);
+  // Background audio
+  useBackgroundAudio(tts.isPlaying);
 
   useEffect(() => {
     setWordCharIndex(tts.wordCharIndex);
@@ -146,12 +139,11 @@ export default function ReaderScreen() {
     if (voiceId) {
       const voices = await Speech.getAvailableVoicesAsync();
       const v = voices.find((v) => v.identifier === voiceId);
-      if (v) setVoiceLabel(friendlyVoiceName(v.name, v.language));
+      if (v) setVoiceLabel(friendlyVoiceName(v.name, v.language, undefined));
     } else {
       setVoiceLabel('System Default');
     }
 
-    // Restart playback with new voice if currently playing
     if (tts.isPlaying) {
       setTimeout(() => tts.play(), 200);
     }
@@ -177,8 +169,8 @@ export default function ReaderScreen() {
     const updated = lib.find((i) => i.id === item.id);
     if (updated) setItem(updated);
   }, [item]);
-
-  if (!item) {
+  if (
+!item) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.textSecondary }}>Loading...</Text>
@@ -204,14 +196,6 @@ export default function ReaderScreen() {
             </Text>
           </View>
           <View style={styles.actionRow}>
-            <TouchableOpacity
-              onPress={() => isPro ? setShowExport(true) : setGateFeature('export_mp3')}
-              style={styles.actionBtn}
-              accessibilityLabel="Export audio"
-              accessibilityRole="button"
-            >
-              <Ionicons name="download-outline" size={22} color={colors.textSecondary} />
-            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setShowBookmarks(true)}
               style={styles.actionBtn}
@@ -302,15 +286,6 @@ export default function ReaderScreen() {
         onJump={(charIndex) => tts.playFromPosition(charIndex)}
         onClose={() => setShowBookmarks(false)}
       />
-      <ExportModal
-        visible={showExport}
-        text={item.text}
-        title={item.title}
-        rate={speechRate}
-        pitch={settings?.speechPitch}
-        voice={activeVoice}
-        onClose={() => setShowExport(false)}
-      />
       <VoicePickerModal
         visible={showVoicePicker}
         currentVoiceId={currentVoiceId}
@@ -319,17 +294,9 @@ export default function ReaderScreen() {
         onSelect={handleVoiceSelect}
         onClose={() => setShowVoicePicker(false)}
       />
-      {gateFeature && (
-        <ProGate
-          visible={!!gateFeature}
-          feature={gateFeature}
-          onClose={() => setGateFeature(null)}
-        />
-      )}
     </View>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
