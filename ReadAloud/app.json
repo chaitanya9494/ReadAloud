@@ -13,6 +13,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#1a1a2e"
     },
+    "newSplashScreen": true,
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
@@ -68,7 +69,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash.png",
-          "resizeMode": "contain",
+          "imageWidth": 250,
           "backgroundColor": "#1a1a2e"
         }
       ],
