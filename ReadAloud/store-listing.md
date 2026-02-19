@@ -1,7 +1,7 @@
 # Google Play Store Listing — Loudify
 
 ## App Name
-Loudify — Read Aloud
+Loudify: Text to Speech Reader
 
 ## Short Description (80 chars max)
 Turn any text, PDF, or ebook into speech. Read aloud with natural voices.
