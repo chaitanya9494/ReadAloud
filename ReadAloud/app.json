@@ -15,9 +15,11 @@
     },
     "newSplashScreen": true,
     "android": {
+      "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#1a1a2e"
+        "foregroundImage": "./assets/ic_launcher_foreground.png",
+        "backgroundImage": "./assets/ic_launcher_background.png",
+        "monochromeImage": "./assets/ic_launcher_monochrome.png"
       },
       "package": "com.loudify.app",
       "intentFilters": [

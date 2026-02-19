@@ -5,3 +5,4 @@ android/
 ios/
 *.log
 build_log*.txt
+play-store-key.json
