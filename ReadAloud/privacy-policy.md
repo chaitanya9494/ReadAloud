@@ -44,4 +44,4 @@ We may update this privacy policy from time to time. Changes will be reflected i
 
 ## Contact
 
-If you have questions about this privacy policy, please contact us at [your-email@example.com].
+If you have questions about this privacy policy, please contact us at silentradar87@gmail.com.
