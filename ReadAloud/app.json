@@ -2,7 +2,7 @@
   "expo": {
     "name": "Loudify",
     "slug": "loudify",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "loudify",
@@ -91,7 +91,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Loudify to access photos for text scanning."
+          "photosPermission": "Allow Loudify to access photos for text scanning.",
+          "cameraPermission": false
         }
       ]
     ],

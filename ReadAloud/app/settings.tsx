@@ -8,6 +8,7 @@ import {
   TextInput,
   ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing, FontSize } from '@/constants/theme';
@@ -18,6 +19,7 @@ import { getSamplePhrase } from '@/utils/voiceSamples';
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
+  const router = useRouter();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [voices, setVoices] = useState<(Speech.Voice & { gender?: 'female' | 'male' })[]>([]);
   const [voiceSearch, setVoiceSearch] = useState('');
@@ -384,6 +386,18 @@ export default function SettingsScreen() {
         </>
       )}
 
+      {/* Privacy & Terms link */}
+      <TouchableOpacity
+        onPress={() => router.push('/privacy')}
+        style={[styles.privacyLink, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        accessibilityLabel="View privacy policy and terms of service"
+        accessibilityRole="button"
+      >
+        <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
+        <Text style={[styles.privacyLinkText, { color: colors.text }]}>Privacy Policy & Terms of Service</Text>
+        <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+      </TouchableOpacity>
+
       {/* Privacy note */}
       <View
         style={[
@@ -485,6 +499,20 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     fontSize: FontSize.sm,
   },
+  privacyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: Spacing.xl,
+  },
+  privacyLinkText: {
+    flex: 1,
+    fontSize: FontSize.md,
+    fontWeight: '500',
+  },
   privacyBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -492,7 +520,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: 12,
     borderWidth: 1,
-    marginTop: Spacing.xl,
+    marginTop: Spacing.md,
   },
   privacyText: {
     flex: 1,
