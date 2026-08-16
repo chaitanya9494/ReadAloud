@@ -8,18 +8,26 @@ import PlayerControls from '@/components/PlayerControls';
 import SleepTimerModal from '@/components/SleepTimerModal';
 import BookmarksPanel from '@/components/BookmarksPanel';
 import VoicePickerModal from '@/components/VoicePickerModal';
+import ShareButton from '@/components/ShareButton';
 import { useTTS } from '@/hooks/useTTS';
 import { useSleepTimer } from '@/hooks/useSleepTimer';
-import { useBackgroundAudio } from '@/hooks/useBackgroundAudio';
 import { useTheme } from '@/hooks/useTheme';
 import {
-  getLibrary, saveLibraryItem, getSettings, saveSettings,
+  getLibrary, getLibraryItem, saveLibraryProgress, getSettings, saveSettings,
   addBookmark, removeBookmark,
-  recordSession, LibraryItem, AppSettings,
+  recordSession, getStats, LibraryItem, AppSettings,
 } from '@/utils/storage';
-import { detectLanguage, findBestVoice } from '@/utils/langDetect';
-import { friendlyVoiceName } from '@/utils/voiceNames';
-import * as Speech from 'expo-speech';
+import { detectLanguage } from '@/utils/langDetect';
+import { logEvent } from '@/utils/analytics';
+import { logFirstRetentionEvent } from '@/utils/retention';
+import {
+  requestReview, shouldPromptForReview, logReviewTapped, ReviewEntryPoint,
+} from '@/utils/review';
+import {
+  ensureNotificationPermission, showMediaNotification, setMediaPlaying,
+  hideMediaNotification, addMediaButtonListener,
+  MediaButtonAction,
+} from '@/utils/mediaSession';
 
 export default function ReaderScreen() {
   const { colors } = useTheme();
@@ -31,62 +39,70 @@ export default function ReaderScreen() {
   const [wordCharIndex, setWordCharIndex] = useState(0);
   const [wordLength, setWordLength] = useState(0);
   const [currentVoiceId, setCurrentVoiceId] = useState<string | undefined>(undefined);
-  const [autoVoice, setAutoVoice] = useState<string | undefined>(undefined);
-  const [voiceLabel, setVoiceLabel] = useState('System Default');
+  const [voiceLabel, setVoiceLabel] = useState('Device default voice');
   const [showSleepTimer, setShowSleepTimer] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showVoicePicker, setShowVoicePicker] = useState(false);
   const [detectedLang, setDetectedLang] = useState<string>('');
+  const [showReviewPrompt, setShowReviewPrompt] = useState(false);
   const sessionStart = useRef<number | null>(null);
   const wordsAtStart = useRef(0);
+  const completedHandled = useRef(false);
+  const stopRequested = useRef(false);
+  const autoPlayStarted = useRef(false);
+  const notificationPermAsked = useRef(false);
+  const mediaActionRef = useRef<(action: MediaButtonAction) => void>(() => {});
+  const progressSaveInFlight = useRef(false);
 
   // Load item and settings
   useEffect(() => {
     (async () => {
-      const [lib, s, voices] = await Promise.all([
-        getLibrary(),
+      const [found, s] = await Promise.all([
+        id ? getLibraryItem(id) : Promise.resolve(null),
         getSettings(),
-        Speech.getAvailableVoicesAsync(),
       ]);
-
-      let found: LibraryItem | undefined;
-      if (id) found = lib.find((i) => i.id === id);
 
       if (found) {
         setItem(found);
         setHighlightIndex(found.position);
 
-        if (!s.voiceId) {
-          const lang = detectLanguage(found.text);
-          setDetectedLang(lang);
-          const bestVoice = findBestVoice(voices, lang);
-          if (bestVoice) setAutoVoice(bestVoice);
-        }
+        setDetectedLang(detectLanguage(found.text));
       }
 
       setSettings(s);
       setSpeechRate(s.speechRate);
       setCurrentVoiceId(s.voiceId);
-
-      if (s.voiceId) {
-        const v = voices.find((v) => v.identifier === s.voiceId);
-        if (v) setVoiceLabel(friendlyVoiceName(v.name, v.language, undefined));
-      }
+      setVoiceLabel(s.voiceId ? 'Selected device voice' : 'Device default voice');
     })();
   }, [id]);
-
-  const activeVoice = currentVoiceId || autoVoice;
 
   const tts = useTTS(item?.text ?? '', {
     rate: speechRate,
     pitch: settings?.speechPitch ?? 1.0,
-    voice: activeVoice,
     wordLevel: true,
     onWordChange: (charIndex) => setHighlightIndex(charIndex),
+    engine: 'system',
+    sherpaVoiceId: settings?.sherpaVoiceId,
   });
 
-  // Background audio
-  useBackgroundAudio(tts.isPlaying);
+  useEffect(() => {
+    autoPlayStarted.current = false;
+  }, [id]);
+
+  // Opening Reader is the user's explicit request to listen. Start only once
+  // after both the library item and settings are ready; the short delay lets
+  // useTTS rebuild its sentence chunks for the newly loaded item first.
+  useEffect(() => {
+    if (!item || !settings || autoPlayStarted.current) return;
+    autoPlayStarted.current = true;
+    const timer = setTimeout(() => {
+      if (item.position > 0) tts.playFromPosition(item.position);
+      else tts.play(0);
+    }, 150);
+    return () => clearTimeout(timer);
+    // The playback functions are stable; item identity is the one-shot key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id, settings]);
 
   useEffect(() => {
     setWordCharIndex(tts.wordCharIndex);
@@ -95,26 +111,174 @@ export default function ReaderScreen() {
 
   const sleepTimer = useSleepTimer(() => tts.stop());
 
-  // Stats tracking
+  // Map native media button presses (notification / lock screen / headset)
+  // to the same actions as the in-app controls. A ref keeps the latest
+  // handlers without re-subscribing on every render.
   useEffect(() => {
+    mediaActionRef.current = (action: MediaButtonAction) => {
+      logEvent('media_button_pressed', { action, source: 'media_notification' });
+      switch (action) {
+        case 'play':
+          tts.resume();
+          break;
+        case 'pause':
+          tts.pause();
+          break;
+        case 'stop':
+          stopRequested.current = true;
+          tts.stop();
+          break;
+        case 'skip_next':
+          handleSkipForward();
+          break;
+        case 'skip_prev':
+          handleSkipBack();
+          break;
+      }
+    };
+  });
+
+  useEffect(() => {
+    return addMediaButtonListener((action) => mediaActionRef.current(action));
+  }, []);
+
+  // Keep the media notification in sync with playback. Showing is
+  // idempotent, so replaying the current title/state is always safe.
+  useEffect(() => {
+    if (!item) return;
+    if (tts.isPlaying) {
+      if (!notificationPermAsked.current) {
+        notificationPermAsked.current = true;
+        ensureNotificationPermission();
+      }
+      showMediaNotification(item.title, tts.isPlaying);
+    } else if (tts.isPaused) {
+      setMediaPlaying(false);
+    } else {
+      hideMediaNotification();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tts.isPlaying, tts.isPaused, item?.title]);
+
+  // Drop the notification if the reader is closed mid-playback.
+  useEffect(() => {
+    return () => hideMediaNotification();
+  }, []);
+
+  // Stats tracking + TTS playback events
+  useEffect(() => {
+    // Playback started (covers play + resume)
     if (tts.isPlaying && !sessionStart.current) {
       sessionStart.current = Date.now();
       wordsAtStart.current = tts.chunkIndex;
+      completedHandled.current = false;
+      stopRequested.current = false;
+      logEvent('tts_playback', {
+        action: 'start',
+        rate: speechRate,
+        position_pct: Math.round(tts.progress * 100),
+      });
+      void logFirstRetentionEvent('first_tts_started', { source: item?.source ?? 'unknown' });
     }
+    // Playback stopped (pause, stop, or natural completion)
     if (!tts.isPlaying && sessionStart.current) {
       const elapsed = Math.round((Date.now() - sessionStart.current) / 1000);
       const chunksRead = Math.max(0, tts.chunkIndex - wordsAtStart.current);
       if (elapsed > 5) recordSession(chunksRead * 15, elapsed);
+      if (elapsed >= 300) {
+        void logFirstRetentionEvent('first_5_minute_listen', { source: item?.source ?? 'unknown' });
+      }
       sessionStart.current = null;
+
+      const isComplete =
+        !tts.isPaused &&
+        !stopRequested.current &&
+        tts.totalChunks > 0 &&
+        tts.chunkIndex >= tts.totalChunks - 1;
+
+      if (isComplete && !completedHandled.current) {
+        completedHandled.current = true;
+        logEvent('tts_playback', { action: 'complete', position_pct: 100, duration_sec: elapsed });
+        maybeShowPostPlaybackReview();
+      } else if (!isComplete) {
+        const action = tts.isPaused ? 'pause' : 'stop';
+        logEvent('tts_playback', {
+          action,
+          position_pct: Math.round(tts.progress * 100),
+          duration_sec: elapsed,
+        });
+      }
     }
-  }, [tts.isPlaying, tts.chunkIndex]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tts.isPlaying, tts.chunkIndex, tts.isPaused]);
+
+  const maybeShowPostPlaybackReview = async () => {
+    try {
+      const [lib, stats] = await Promise.all([getLibrary(), getStats()]);
+      const should = await shouldPromptForReview({
+        libraryCount: lib.length,
+        totalSecondsListened: stats.totalSecondsListened,
+        totalSessions: stats.totalSessions,
+      });
+      if (should) setShowReviewPrompt(true);
+    } catch {
+      /* never let review logic break the app */
+    }
+  };
+
+  const handleRateChange = (rate: number) => {
+    setSpeechRate(rate);
+    logEvent('settings_changed', { setting_name: 'rate', value: rate });
+    if (tts.isPlaying) tts.play();
+  };
+
+  const handleVoiceSelect = async (voiceId: string | undefined) => {
+    setCurrentVoiceId(voiceId);
+    setSettings((current) => current ? { ...current, voiceId, ttsEngine: 'system' } : current);
+    await saveSettings({ voiceId, ttsEngine: 'system' });
+    if (voiceId) {
+      setVoiceLabel('Selected device voice');
+      logEvent('voice_changed', { language: 'system', voice: voiceId, is_default: false });
+    } else {
+      setVoiceLabel('Device default voice');
+      logEvent('voice_changed', { language: 'default', is_default: true });
+    }
+
+    if (tts.isPlaying) {
+      setTimeout(() => tts.play(), 200);
+    }
+  };
+
+  const handleStop = () => {
+    stopRequested.current = true;
+    tts.stop();
+  };
+
+  const handleSkipForward = () => {
+    logEvent('tts_playback', { action: 'skip_forward', position_pct: Math.round(tts.progress * 100) });
+    tts.skipForward();
+  };
+
+  const handleSkipBack = () => {
+    logEvent('tts_playback', { action: 'skip_back', position_pct: Math.round(tts.progress * 100) });
+    tts.skipBack();
+  };
+
+  const handleRateReview = async (entryPoint: ReviewEntryPoint) => {
+    logReviewTapped(entryPoint);
+    setShowReviewPrompt(false);
+    await requestReview(entryPoint);
+  };
 
   // Auto-save position
   const savePosition = useCallback(async () => {
-    if (item && highlightIndex > 0) {
-      const updated = { ...item, position: highlightIndex, lastReadAt: Date.now() };
-      await saveLibraryItem(updated);
-      setItem(updated);
+    if (!item || highlightIndex <= 0 || progressSaveInFlight.current) return;
+    progressSaveInFlight.current = true;
+    try {
+      const updated = await saveLibraryProgress(item.id, highlightIndex);
+      if (updated) setItem((current) => current ? { ...current, ...updated } : current);
+    } finally {
+      progressSaveInFlight.current = false;
     }
   }, [item, highlightIndex]);
 
@@ -122,31 +286,28 @@ export default function ReaderScreen() {
     if (!tts.isPlaying && highlightIndex > 0) savePosition();
   }, [tts.isPlaying, savePosition, highlightIndex]);
 
+  // Persist progress continuously while playing so a killed process or
+  // crash never loses the user's place. Debounced to avoid hammering
+  // AsyncStorage on every word boundary. A ref keeps the interval calling
+  // the latest savePosition (which closes over the newest highlightIndex).
+  const savePositionRef = useRef(savePosition);
+  useEffect(() => {
+    savePositionRef.current = savePosition;
+  }, [savePosition]);
+
+  useEffect(() => {
+    if (!tts.isPlaying) return;
+    const interval = setInterval(() => {
+      savePositionRef.current();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [tts.isPlaying]);
+
   const handlePlay = () => {
-    if (item?.position && item.position > 0) tts.playFromPosition(item.position);
-    else tts.play(0);
-  };
-
-  const handleRateChange = (rate: number) => {
-    setSpeechRate(rate);
-    if (tts.isPlaying) tts.play();
-  };
-
-  const handleVoiceSelect = async (voiceId: string | undefined) => {
-    setCurrentVoiceId(voiceId);
-    await saveSettings({ voiceId });
-
-    if (voiceId) {
-      const voices = await Speech.getAvailableVoicesAsync();
-      const v = voices.find((v) => v.identifier === voiceId);
-      if (v) setVoiceLabel(friendlyVoiceName(v.name, v.language, undefined));
-    } else {
-      setVoiceLabel('System Default');
-    }
-
-    if (tts.isPlaying) {
-      setTimeout(() => tts.play(), 200);
-    }
+    if (item?.position && item.position > 0) {
+      logEvent('reader_resumed', { source: item.source, position_pct: Math.round((item.position / Math.max(item.textLength, 1)) * 100) });
+      tts.playFromPosition(item.position);
+    } else tts.play(0);
   };
 
   const handleTapSentence = useCallback(
@@ -157,20 +318,25 @@ export default function ReaderScreen() {
   const handleAddBookmark = useCallback(async (label: string, charIndex: number) => {
     if (!item) return;
     await addBookmark(item.id, charIndex, label);
-    const lib = await getLibrary();
-    const updated = lib.find((i) => i.id === item.id);
+    const updated = await getLibraryItem(item.id);
     if (updated) setItem(updated);
+    logEvent('bookmark_added', { total_bookmarks: updated?.bookmarks?.length ?? 0 });
   }, [item]);
 
   const handleRemoveBookmark = useCallback(async (bookmarkId: string) => {
     if (!item) return;
     await removeBookmark(item.id, bookmarkId);
-    const lib = await getLibrary();
-    const updated = lib.find((i) => i.id === item.id);
+    const updated = await getLibraryItem(item.id);
     if (updated) setItem(updated);
   }, [item]);
-  if (
-!item) {
+
+  const handleSleepTimerSet = (minutes: number) => {
+    logEvent('sleep_timer_set', { minutes });
+    sleepTimer.start(minutes);
+    setShowSleepTimer(false);
+  };
+
+  if (!item) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.textSecondary }}>Loading...</Text>
@@ -209,6 +375,13 @@ export default function ReaderScreen() {
                 </View>
               )}
             </TouchableOpacity>
+            <ShareButton
+              variant="excerpt"
+              text={item.text}
+              title={item.title}
+              sourceScreen="reader"
+              style={styles.actionBtn}
+            />
             <TouchableOpacity
               onPress={() => setShowSleepTimer(true)}
               style={styles.actionBtn}
@@ -262,18 +435,60 @@ export default function ReaderScreen() {
         onPlay={handlePlay}
         onPause={tts.pause}
         onResume={tts.resume}
-        onSkipBack={tts.skipBack}
-        onSkipForward={tts.skipForward}
-        onStop={tts.stop}
+        onSkipBack={handleSkipBack}
+        onSkipForward={handleSkipForward}
+        onStop={handleStop}
         onRateChange={handleRateChange}
       />
+
+      {/* Post-playback review prompt */}
+      {showReviewPrompt && (
+        <View style={[styles.reviewCard, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+          <View style={styles.reviewCardRow}>
+            <Ionicons name="star" size={22} color={colors.warning} />
+            <Text style={[styles.reviewCardTitle, { color: colors.text }]}>
+              Enjoying Loudify?
+            </Text>
+            <TouchableOpacity
+              onPress={() => setShowReviewPrompt(false)}
+              accessibilityLabel="Dismiss review prompt"
+              accessibilityRole="button"
+            >
+              <Ionicons name="close" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.reviewCardBody, { color: colors.textSecondary }]}>
+            Your rating helps others discover Loudify.
+          </Text>
+          <View style={styles.reviewCardActions}>
+            <TouchableOpacity
+              onPress={() => handleRateReview('post_playback')}
+              style={[styles.reviewCardBtn, { backgroundColor: colors.primary }]}
+              accessibilityLabel="Rate Loudify"
+              accessibilityRole="button"
+            >
+              <Text style={styles.reviewCardBtnText}>Rate Loudify</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowReviewPrompt(false)}
+              style={[styles.reviewCardBtnGhost, { borderColor: colors.border }]}
+              accessibilityLabel="Maybe later"
+              accessibilityRole="button"
+            >
+              <Text style={[styles.reviewCardBtnGhostText, { color: colors.textSecondary }]}>
+                Maybe later
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Modals */}
       <SleepTimerModal
         visible={showSleepTimer}
         isActive={sleepTimer.isActive}
         remaining={sleepTimer.formatRemaining()}
-        onSelect={(m) => { sleepTimer.start(m); setShowSleepTimer(false); }}
+        onSelect={handleSleepTimerSet}
         onCancel={() => { sleepTimer.cancel(); setShowSleepTimer(false); }}
         onClose={() => setShowSleepTimer(false)}
       />
@@ -289,8 +504,8 @@ export default function ReaderScreen() {
       <VoicePickerModal
         visible={showVoicePicker}
         currentVoiceId={currentVoiceId}
+        currentEngine="system"
         speechRate={speechRate}
-        speechPitch={settings?.speechPitch ?? 1.0}
         onSelect={handleVoiceSelect}
         onClose={() => setShowVoicePicker(false)}
       />
@@ -319,4 +534,35 @@ const styles = StyleSheet.create({
     borderRadius: 8, borderWidth: 1,
   },
   voiceLabel: { flex: 1, fontSize: FontSize.xs, fontWeight: '500' },
+  reviewCard: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: Spacing.xs,
+  },
+  reviewCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  reviewCardTitle: { flex: 1, fontSize: FontSize.md, fontWeight: '600' },
+  reviewCardBody: { fontSize: FontSize.sm, lineHeight: 20 },
+  reviewCardActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
+  reviewCardBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderRadius: 8,
+  },
+  reviewCardBtnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '600' },
+  reviewCardBtnGhost: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  reviewCardBtnGhostText: { fontSize: FontSize.sm, fontWeight: '500' },
 });

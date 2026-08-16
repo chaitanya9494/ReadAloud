@@ -6,3 +6,10 @@ ios/
 *.log
 build_log*.txt
 play-store-key.json
+*.keystore
+*.jks
+keystore.properties
+google-services.json
+scripts/screenshots/
+scripts/test-files/
+scripts/test-results-*.log

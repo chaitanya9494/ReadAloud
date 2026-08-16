@@ -1,19 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, KeyboardAvoidingView, Platform,
+  ScrollView, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spacing, FontSize } from '@/constants/theme';
 import FilePickerButton from '@/components/FilePickerButton';
+import ShareButton from '@/components/ShareButton';
 import { useLibrary } from '@/hooks/useLibrary';
 import { useTheme } from '@/hooks/useTheme';
 import { extractSharedText, getInitialSharedText } from '@/utils/shareIntent';
+import { detectLanguage } from '@/utils/langDetect';
+import { logEvent } from '@/utils/analytics';
+import { logFirstRetentionEvent } from '@/utils/retention';
+import { requestReview, logReviewTapped } from '@/utils/review';
+import { MAX_DOCUMENT_CHARS } from '@/utils/storage';
 
 export default function HomeScreen() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ sharedText?: string }>();
   const [inputText, setInputText] = useState('');
@@ -41,21 +49,57 @@ export default function HomeScreen() {
 
   const handleReadNow = async () => {
     if (!inputText.trim()) return;
+    const trimmed = inputText.trim();
+    if (trimmed.length > MAX_DOCUMENT_CHARS) {
+      Alert.alert('Document too large', 'Please use text under 1,000,000 characters so Loudify stays responsive on all devices.');
+      return;
+    }
+    const source = params.sharedText ? 'share' : 'paste';
     const item = await addItem(
-      inputText.trim(),
-      inputText.trim().slice(0, 40) + (inputText.length > 40 ? '...' : ''),
-      params.sharedText ? 'share' : 'paste'
+      trimmed,
+      trimmed.slice(0, 40) + (trimmed.length > 40 ? '...' : ''),
+      source
     );
+    logEvent('content_opened', {
+      source,
+      word_count: trimmed.split(/\s+/).length,
+      language: detectLanguage(trimmed),
+    });
+    void logFirstRetentionEvent('first_content_opened', { source });
     setInputText('');
     router.push({ pathname: '/reader', params: { id: item.id } });
   };
 
   const handleFileLoaded = async (text: string, fileName: string) => {
+    if (text.length > MAX_DOCUMENT_CHARS) {
+      Alert.alert('Document too large', 'Please use a document under 1,000,000 characters so Loudify stays responsive on all devices.');
+      return;
+    }
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    logEvent('content_opened', {
+      source: 'file',
+      file_type: ext,
+      word_count: text.split(/\s+/).length,
+      language: detectLanguage(text),
+    });
+    void logFirstRetentionEvent('first_content_opened', { source: 'file' });
     const item = await addItem(text, fileName, 'file', fileName);
     router.push({ pathname: '/reader', params: { id: item.id } });
   };
 
   const recentItems = items.slice(0, 3);
+
+  // Most recently-read in-progress item, for the Continue Listening card.
+  const continueItem = useMemo(
+    () =>
+      items
+        .filter((i) => i.position > 0)
+        .sort((a, b) => b.lastReadAt - a.lastReadAt)[0] || null,
+    [items]
+  );
+  const continueProgress = continueItem && continueItem.textLength > 0
+    ? Math.min(continueItem.position / continueItem.textLength, 1)
+    : 0;
 
   // Live word/char count
   const wordCount = inputText.trim() ? inputText.trim().split(/\s+/).length : 0;
@@ -67,12 +111,30 @@ export default function HomeScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        style={[styles.container, { backgroundColor: colors.background }]}
-        contentContainerStyle={styles.content}
+        style={[
+          styles.container,
+          {
+            backgroundColor: colors.background,
+            // Android 15+ draws the three-button navigation bar over app
+            // content. Keep the scroll viewport (and tappable nav row) above
+            // it even on devices that report a zero bottom safe-area inset.
+            marginBottom: Platform.OS === 'android' ? Math.max(insets.bottom, 44) : 0,
+          },
+        ]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: Spacing.xxl + insets.bottom },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         {/* Hero */}
         <View style={styles.hero}>
+          <View style={styles.heroShareRow}>
+            <Text style={[styles.heroShareLabel, { color: colors.textSecondary }]}>
+              Share Loudify
+            </Text>
+            <ShareButton variant="app" sourceScreen="home" />
+          </View>
           <Ionicons name="headset-outline" size={48} color={colors.primary} />
           <Text style={[styles.heroTitle, { color: colors.text }]}>
             Paste, open, listen.
@@ -81,6 +143,35 @@ export default function HomeScreen() {
             No accounts. No limits. No data leaves your device.
           </Text>
         </View>
+
+        {/* Continue Listening */}
+        {continueItem && (
+          <TouchableOpacity
+            onPress={() => router.push({ pathname: '/reader', params: { id: continueItem.id } })}
+            style={[styles.continueCard, { backgroundColor: colors.surface, borderColor: colors.primary }]}
+            accessibilityLabel={`Continue listening to ${continueItem.title}`}
+            accessibilityRole="button"
+          >
+            <View style={[styles.continueIcon, { backgroundColor: colors.primary + '15' }]}>
+              <Ionicons name="play" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.continueContent}>
+              <Text style={[styles.continueLabel, { color: colors.primary }]}>Continue Listening</Text>
+              <Text style={[styles.continueTitle, { color: colors.text }]} numberOfLines={1}>
+                {continueItem.title}
+              </Text>
+              <View style={[styles.continueTrack, { backgroundColor: colors.border }]}>
+                <View
+                  style={[
+                    styles.continueFill,
+                    { width: `${continueProgress * 100}%`, backgroundColor: colors.primary },
+                  ]}
+                />
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        )}
 
         {/* Text input */}
         <TextInput
@@ -127,6 +218,21 @@ export default function HomeScreen() {
 
         {/* File picker */}
         <FilePickerButton onTextLoaded={handleFileLoaded} />
+
+        {/* Review banner */}
+        <TouchableOpacity
+          onPress={() => {
+            logReviewTapped('home');
+            requestReview('home');
+          }}
+          style={[styles.reviewBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          accessibilityLabel="Rate Loudify on Google Play"
+          accessibilityRole="button"
+        >
+          <Ionicons name="star-outline" size={20} color={colors.warning} />
+          <Text style={[styles.reviewBannerText, { color: colors.text }]}>Enjoying Loudify?</Text>
+          <Text style={[styles.reviewBannerLink, { color: colors.primary }]}>Rate us</Text>
+        </TouchableOpacity>
 
         {/* Recent items */}
         {recentItems.length > 0 && (
@@ -199,10 +305,40 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: Spacing.md, paddingBottom: Spacing.xxl },
+  content: { padding: Spacing.md },
   hero: { alignItems: 'center', marginVertical: Spacing.lg, gap: Spacing.sm },
+  heroShareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+  },
+  heroShareLabel: { fontSize: FontSize.xs },
   heroTitle: { fontSize: FontSize.xxl, fontWeight: '700' },
   heroSub: { fontSize: FontSize.sm, textAlign: 'center' },
+  continueCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: Spacing.md,
+  },
+  continueIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueContent: { flex: 1 },
+  continueLabel: { fontSize: FontSize.xs, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  continueTitle: { fontSize: FontSize.md, fontWeight: '600', marginTop: 2 },
+  continueTrack: { height: 3, borderRadius: 2, marginTop: Spacing.sm, overflow: 'hidden' },
+  continueFill: { height: '100%', borderRadius: 2 },
   textInput: {
     borderWidth: 1, borderRadius: 12, padding: Spacing.md,
     fontSize: FontSize.md, minHeight: 140, maxHeight: 220,
@@ -233,4 +369,22 @@ const styles = StyleSheet.create({
     gap: Spacing.xs, padding: Spacing.md, borderRadius: 12, borderWidth: 1,
   },
   navLabel: { fontSize: FontSize.sm, fontWeight: '500' },
+  reviewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: Spacing.md,
+  },
+  reviewBannerText: {
+    flex: 1,
+    fontSize: FontSize.md,
+    fontWeight: '500',
+  },
+  reviewBannerLink: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+  },
 });

@@ -1,64 +1,66 @@
 # Google Play Store Listing — Loudify
 
 ## App Name (30 chars max)
-Loudify: Text to Speech (TTS)
+Loudify: Text to Speech Reader
 
 ## Short Description (80 chars max)
-Text to speech reader — listen to PDFs, ebooks, articles & any text read aloud
+Read aloud any text, PDF, EPUB. TTS reader — private, offline, no ads.
 
 ## Full Description (4000 chars max)
-Loudify is a text-to-speech (TTS) app that reads any text aloud using natural-sounding voices. Paste text, open documents, scan printed pages, or share from any app — Loudify converts it all to speech instantly.
+Loudify is a free text-to-speech reader that turns any text into natural-sounding audio. Open PDFs, ebooks, documents, or paste any text — and listen to it read aloud instantly. No accounts, no ads, no paywalls.
 
-🗣️ TEXT TO SPEECH MADE SIMPLE
-Loudify is not a volume booster or sound amplifier. It's a text-to-speech reader that turns written content into spoken audio so you can listen instead of read.
+📖 READ ANY CONTENT ALOUD
+• PDF to speech — open and listen to any PDF document read aloud
+• EPUB reader with text to speech — turn ebooks into audiobooks
+• DOCX, TXT, HTML, RTF file support — read aloud any document format
+• Paste text to speech — copy from anywhere, paste, and listen
+• Share to Loudify — send text from any app to be read aloud
 
-📖 READ ANYTHING ALOUD
-• Text to speech for PDF, EPUB, DOCX, TXT, HTML, and RTF files
-• Paste any text and tap play — instant TTS conversion
-• Scan printed text from books and documents with camera (OCR)
-• Share articles and text from any app directly to Loudify
-• Extract and read text from web URLs
+🎧 NATURAL TTS VOICES & CONTROLS
+• Access all system text-to-speech voices installed on your device
+• Multi-language TTS — read aloud in English, Spanish, Hindi, French, German, and 50+ languages
+• Adjustable speech rate — slow down to 0.5x or speed up to 2x
+• Voice pitch control — customize how the TTS voice sounds
+• Background audio playback — listen while using other apps
+• Sleep timer — set a timer and fall asleep to your reading
+• Word-by-word highlighting — follow along as text is spoken
 
-🎧 NATURAL VOICES & FULL CONTROL
-• Choose from all available system TTS voices and languages
-• Adjust reading speed from 0.5x to 2x
-• Fine-tune voice pitch to your preference
-• Word-by-word and sentence highlighting as text is read aloud
-• Background playback — listen while using other apps
-• Sleep timer for bedtime listening
+📚 PERSONAL READING LIBRARY
+• Save PDFs, ebooks, and text to your offline library
+• Bookmark important passages for quick access
+• Auto-save reading position — resume exactly where you stopped
+• Reading stats — track words read, listening time, sessions, and streaks
 
-📚 YOUR PERSONAL READING LIBRARY
-• Save documents and text to your library
-• Bookmark important passages
-• Auto-saves your reading position — pick up where you left off
-• Track reading stats: words read, time listened, day streaks
+🎨 DESIGNED FOR COMFORTABLE READING
+• Dark mode & light mode — easy on the eyes day or night
+• Adjustable font size for comfortable on-screen reading
+• Clean, ad-free, distraction-free interface
+• Guided onboarding for first-time users
 
-🎨 COMFORTABLE READING EXPERIENCE
-• Dark mode, light mode, or follow system theme
-• Adjustable text size for comfortable reading
-• Clean, distraction-free interface
-• Onboarding walkthrough for new users
+🔒 PRIVACY-FIRST TEXT TO SPEECH
+• All TTS processing happens locally on your device
+• Your text never leaves your device — ever
+• No account required — start using immediately
+• No ads, no paywalls for core features
+• Works fully offline with system TTS engines
+• Optional anonymous usage analytics (can be disabled in Settings)
 
-🔒 100% PRIVATE & OFFLINE
-• All text-to-speech processing happens on your device
-• No accounts required, no sign-up
-• No data collection, no tracking, no analytics
-• No ads — ever
-• Works completely offline with system TTS voices
-• Your text never leaves your device
-
-PERFECT FOR:
-• Students — listen to study materials, textbooks, and notes
-• Commuters — turn articles and documents into audio for your commute
-• Accessibility — making any text content audible
-• Multitaskers — listen to emails, articles, and documents while doing other things
+📱 WHO IS LOUDIFY FOR?
+• Students — listen to textbooks, lecture notes, and study guides
+• Commuters — turn articles and documents into audio for your drive
+• Book lovers — convert EPUB and PDF ebooks into spoken audio
+• Professionals — listen to reports and long documents hands-free
 • Language learners — hear text read aloud in different languages
-• Anyone who prefers listening over reading
+• Accessibility users — making any written content audible
+• Multitaskers — listen to content while cooking, exercising, or doing chores
 
-Loudify is a free text-to-speech reader with an optional Pro upgrade for power users. Download now and start listening.
+📋 SUPPORTED FILE FORMATS
+PDF, EPUB, DOCX, TXT, HTML, RTF — open directly or share from file managers, email, browsers, and cloud storage apps.
+
+A Daily Apps Kit product. Simple Apps for Everyday Life.
 
 ## Category
 Books & Reference
 
 ## Tags
-text to speech, tts, read aloud, pdf reader, text reader, tts reader, read text aloud, pdf to speech, epub reader, audiobook maker, text to audio, speech reader, read aloud app, accessibility reader, document reader
+text to speech, tts, read aloud, pdf reader, text reader, tts reader, pdf to speech, epub reader, read text aloud, text to audio, audiobook, speech reader, document reader, read aloud app, accessibility

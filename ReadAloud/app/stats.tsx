@@ -1,16 +1,31 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing, FontSize } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
-import { getStats, ReadingStats, DEFAULT_STATS } from '@/utils/storage';
+import { getStats, getLibrary, ReadingStats, DEFAULT_STATS } from '@/utils/storage';
+import {
+  shouldPromptForReview, requestReview, logReviewTapped, ReviewEntryPoint,
+} from '@/utils/review';
 
 export default function StatsScreen() {
   const { colors } = useTheme();
   const [stats, setStats] = useState<ReadingStats>(DEFAULT_STATS);
+  const [showReviewCard, setShowReviewCard] = useState(false);
 
   useEffect(() => {
-    getStats().then(setStats);
+    (async () => {
+      const s = await getStats();
+      setStats(s);
+      const lib = await getLibrary();
+      const should = await shouldPromptForReview({
+        libraryCount: lib.length,
+        totalSecondsListened: s.totalSecondsListened,
+        totalSessions: s.totalSessions,
+      });
+      // Only show on milestone: 5+ sessions
+      if (should && s.totalSessions >= 5) setShowReviewCard(true);
+    })();
   }, []);
 
   const formatTime = (seconds: number) => {
@@ -20,6 +35,12 @@ export default function StatsScreen() {
     const h = Math.floor(m / 60);
     const rm = m % 60;
     return `${h}h ${rm}m`;
+  };
+
+  const handleRate = async (entryPoint: ReviewEntryPoint) => {
+    logReviewTapped(entryPoint);
+    setShowReviewCard(false);
+    await requestReview(entryPoint);
   };
 
   const cards: Array<{ icon: string; label: string; value: string; color: string }> = [
@@ -58,6 +79,40 @@ export default function StatsScreen() {
       <Text style={[styles.sub, { color: colors.textSecondary }]}>
         All tracked locally on your device
       </Text>
+
+      {showReviewCard && (
+        <View style={[styles.reviewCard, { backgroundColor: colors.surface, borderColor: colors.warning }]}>
+          <View style={styles.reviewCardRow}>
+            <Ionicons name="star" size={24} color={colors.warning} />
+            <Text style={[styles.reviewCardTitle, { color: colors.text }]}>
+              You've read {stats.totalWordsRead.toLocaleString()} words!
+            </Text>
+          </View>
+          <Text style={[styles.reviewCardBody, { color: colors.textSecondary }]}>
+            If Loudify helps you read more, please take a moment to rate it.
+          </Text>
+          <View style={styles.reviewCardActions}>
+            <TouchableOpacity
+              onPress={() => handleRate('stats_milestone')}
+              style={[styles.reviewCardBtn, { backgroundColor: colors.primary }]}
+              accessibilityLabel="Rate Loudify"
+              accessibilityRole="button"
+            >
+              <Text style={styles.reviewCardBtnText}>Rate Loudify</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowReviewCard(false)}
+              style={[styles.reviewCardBtnGhost, { borderColor: colors.border }]}
+              accessibilityLabel="Maybe later"
+              accessibilityRole="button"
+            >
+              <Text style={[styles.reviewCardBtnGhostText, { color: colors.textSecondary }]}>
+                Maybe later
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <View style={styles.grid}>
         {cards.map((card) => (
@@ -98,4 +153,23 @@ const styles = StyleSheet.create({
   cardLabel: { fontSize: FontSize.xs },
   emptyState: { alignItems: 'center', marginTop: Spacing.xxl, gap: Spacing.md },
   emptyText: { fontSize: FontSize.md, textAlign: 'center' },
+  reviewCard: {
+    padding: Spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: Spacing.lg,
+    gap: Spacing.xs,
+  },
+  reviewCardRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  reviewCardTitle: { flex: 1, fontSize: FontSize.md, fontWeight: '600' },
+  reviewCardBody: { fontSize: FontSize.sm, lineHeight: 20 },
+  reviewCardActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
+  reviewCardBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: Spacing.sm, borderRadius: 8,
+  },
+  reviewCardBtnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '600' },
+  reviewCardBtnGhost: {
+    flex: 1, alignItems: 'center', paddingVertical: Spacing.sm, borderRadius: 8, borderWidth: 1,
+  },
+  reviewCardBtnGhostText: { fontSize: FontSize.sm, fontWeight: '500' },
 });

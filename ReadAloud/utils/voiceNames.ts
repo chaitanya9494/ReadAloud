@@ -1,24 +1,26 @@
 /** Map language codes to human-readable names */
 const LANG_MAP: Record<string, string> = {
-  af: 'Afrikaans', am: 'Amharic', ar: 'Arabic', az: 'Azerbaijani',
-  bg: 'Bulgarian', bn: 'Bengali', bs: 'Bosnian', ca: 'Catalan',
-  cs: 'Czech', cy: 'Welsh', da: 'Danish', de: 'German',
-  el: 'Greek', en: 'English', es: 'Spanish', et: 'Estonian',
+  af: 'Afrikaans', am: 'Amharic', ar: 'Arabic', as: 'Assamese',
+  az: 'Azerbaijani', be: 'Belarusian', bg: 'Bulgarian', bn: 'Bengali',
+  bs: 'Bosnian', ca: 'Catalan', cs: 'Czech', cy: 'Welsh', da: 'Danish',
+  de: 'German', el: 'Greek', en: 'English', es: 'Spanish', et: 'Estonian',
   eu: 'Basque', fa: 'Persian', fi: 'Finnish', fil: 'Filipino',
-  fr: 'French', gl: 'Galician', gu: 'Gujarati', hi: 'Hindi',
+  fr: 'French', gl: 'Galician', gu: 'Gujarati', he: 'Hebrew', hi: 'Hindi',
   hr: 'Croatian', hu: 'Hungarian', hy: 'Armenian', id: 'Indonesian',
-  is: 'Icelandic', it: 'Italian', iw: 'Hebrew', ja: 'Japanese',
-  jv: 'Javanese', ka: 'Georgian', kk: 'Kazakh', km: 'Khmer',
-  kn: 'Kannada', ko: 'Korean', lo: 'Lao', lt: 'Lithuanian',
-  lv: 'Latvian', mk: 'Macedonian', ml: 'Malayalam', mn: 'Mongolian',
-  mr: 'Marathi', ms: 'Malay', my: 'Burmese', nb: 'Norwegian',
-  ne: 'Nepali', nl: 'Dutch', pl: 'Polish', pt: 'Portuguese',
-  ro: 'Romanian', ru: 'Russian', si: 'Sinhala', sk: 'Slovak',
-  sl: 'Slovenian', sq: 'Albanian', sr: 'Serbian', su: 'Sundanese',
-  sv: 'Swedish', sw: 'Swahili', ta: 'Tamil', te: 'Telugu',
-  th: 'Thai', tr: 'Turkish', uk: 'Ukrainian', ur: 'Urdu',
-  uz: 'Uzbek', vi: 'Vietnamese', yue: 'Cantonese', zh: 'Chinese',
-  zu: 'Zulu',
+  is: 'Icelandic', it: 'Italian', ja: 'Japanese', jv: 'Javanese',
+  ka: 'Georgian', kk: 'Kazakh', km: 'Khmer', kn: 'Kannada', ko: 'Korean',
+  ky: 'Kyrgyz', lo: 'Lao', lt: 'Lithuanian', lv: 'Latvian',
+  mk: 'Macedonian', ml: 'Malayalam', mn: 'Mongolian', mr: 'Marathi',
+  ms: 'Malay', my: 'Burmese', nb: 'Norwegian', ne: 'Nepali',
+  nl: 'Dutch', or: 'Odia', pa: 'Punjabi', pl: 'Polish', ps: 'Pashto',
+  pt: 'Portuguese', ro: 'Romanian', ru: 'Russian', sd: 'Sindhi',
+  si: 'Sinhala', sk: 'Slovak', sl: 'Slovenian', sq: 'Albanian',
+  sr: 'Serbian', su: 'Sundanese', sv: 'Swedish', sw: 'Swahili',
+  ta: 'Tamil', te: 'Telugu', th: 'Thai', tr: 'Turkish',
+  uk: 'Ukrainian', ur: 'Urdu', uz: 'Uzbek', vi: 'Vietnamese',
+  yue: 'Cantonese', zh: 'Chinese', zu: 'Zulu',
+  mni: 'Manipuri', doi: 'Dogri', kok: 'Konkani', bho: 'Bhojpuri',
+  mai: 'Maithili', brx: 'Bodo',
 };
 
 const REGION_MAP: Record<string, string> = {
@@ -36,6 +38,25 @@ const REGION_MAP: Record<string, string> = {
   SE: 'Sweden', DK: 'Denmark', FI: 'Finland', PL: 'Poland',
   CZ: 'Czechia', SK: 'Slovakia', RO: 'Romania', UA: 'Ukraine',
   TR: 'Turkey', TH: 'Thailand', VN: 'Vietnam',
+  GR: 'Greece', BG: 'Bulgaria', KH: 'Cambodia', IL: 'Israel',
+  GE: 'Georgia', IR: 'Iran', LK: 'Sri Lanka', NP: 'Nepal',
+  MM: 'Myanmar', LA: 'Laos', KZ: 'Kazakhstan', AM: 'Armenia',
+  AZ: 'Azerbaijan', BY: 'Belarus', MD: 'Moldova', EE: 'Estonia',
+  LT: 'Lithuania', LV: 'Latvia', SI: 'Slovenia', MK: 'North Macedonia',
+  AL: 'Albania', MT: 'Malta', CY: 'Cyprus', HU: 'Hungary',
+  IS: 'Iceland', LU: 'Luxembourg', MC: 'Monaco', AE: 'UAE',
+  QA: 'Qatar', KW: 'Kuwait', JO: 'Jordan', LB: 'Lebanon',
+  BH: 'Bahrain', OM: 'Oman', YE: 'Yemen', DZ: 'Algeria',
+  MA: 'Morocco', TN: 'Tunisia', LY: 'Libya', SD: 'Sudan',
+  ET: 'Ethiopia', GH: 'Ghana', CM: 'Cameroon', CI: "Côte d'Ivoire",
+  SN: 'Senegal', UG: 'Uganda', ZW: 'Zimbabwe', MW: 'Malawi',
+  ZM: 'Zambia', BW: 'Botswana', NA: 'Namibia', MU: 'Mauritius',
+  CR: 'Costa Rica', PA: 'Panama', DO: 'Dominican Republic',
+  PR: 'Puerto Rico', GT: 'Guatemala', SV: 'El Salvador', HN: 'Honduras',
+  NI: 'Nicaragua', BO: 'Bolivia', PE: 'Peru', EC: 'Ecuador',
+  UY: 'Uruguay', PY: 'Paraguay', VE: 'Venezuela', CU: 'Cuba',
+  HT: 'Haiti', JM: 'Jamaica', TT: 'Trinidad and Tobago',
+  FJ: 'Fiji', PG: 'Papua New Guinea',
 };
 
 /**
@@ -77,31 +98,45 @@ export function languageGroup(langCode: string): string {
 }
 
 /**
- * Android voice variant suffixes that typically correspond to
- * different genders / voice personas. These are Google TTS engine
- * internal codes — not documented, but consistent across devices.
- *
- * Female-leaning variants: sfg, tpd, tpc, iog
- * Male-leaning variants:   tpf, sfb, iob, tpb
- *
- * We use these to pick one male + one female per locale.
+ * Evidence-based variant→gender guesses for Google TTS and the Samsung
+ * "Default"/"Premium" engines. These codes are engine internals and are not
+ * documented by Google, but the following are well-established across the
+ * community (Saiy reverse-engineering + Stack Overflow reports):
+ *   - en-US: x-sfg = female, x-tpf = male, x-tpd/x-tpc = female
+ *   - en-GB: x-rjs = male, x-fis = female
+ *   - en-IN: x-ene / x-end = male
+ *   - hi-IN: x-hie = male
+ * Only ever used as a last resort when the engine exposes no explicit gender
+ * feature and no "#male"/"#female" marker is present.
  */
-const FEMALE_VARIANTS = new Set(['sfg', 'tpd', 'tpc', 'iog', 'iol', 'tpl']);
-const MALE_VARIANTS = new Set(['tpf', 'sfb', 'iob', 'tpb', 'iom', 'tpm']);
+const VARIANT_GENDER: Record<string, 'female' | 'male'> = {
+  sfg: 'female',
+  tpd: 'female',
+  tpc: 'female',
+  tpf: 'male',
+  rjs: 'male',
+  fis: 'female',
+  ene: 'male',
+  end: 'male',
+  hie: 'male',
+};
 
-/** Extract the 3-letter variant code from an Android voice name/identifier */
-function getVariantCode(id: string): string | null {
-  // Pattern: lang-region-x-VARIANT-local/network  e.g. "en-us-x-sfg-local"
-  const match = id.match(/-x-([a-z]{3})-/i);
-  return match ? match[1].toLowerCase() : null;
-}
-
-/** Guess gender from the variant code */
-function guessGender(id: string): 'female' | 'male' | 'unknown' {
-  const variant = getVariantCode(id);
-  if (!variant) return 'unknown';
-  if (FEMALE_VARIANTS.has(variant)) return 'female';
-  if (MALE_VARIANTS.has(variant)) return 'male';
+/**
+ * Determine a voice's gender, preferring authoritative signals in order:
+ *   1. Android `Voice.getFeatures()` (from native module) — the engine's own word
+ *   2. "#female_N" / "#male_N" markers embedded in Google TTS voice names
+ *   3. Evidence-based variant codes (see VARIANT_GENDER) — last resort only
+ * Unknown → 'unknown' (renders without a gender symbol).
+ */
+function guessGender(id: string, featureGender?: 'female' | 'male' | undefined): 'female' | 'male' | 'unknown' {
+  if (featureGender === 'male' || featureGender === 'female') return featureGender;
+  const marker = id.match(/#(male|female)/i);
+  if (marker) return marker[1].toLowerCase() as 'female' | 'male';
+  const variant = id.match(/-x-([a-z]{3})(?:-|$)/i);
+  if (variant) {
+    const v = variant[1].toLowerCase();
+    if (VARIANT_GENDER[v]) return VARIANT_GENDER[v];
+  }
   return 'unknown';
 }
 
@@ -136,7 +171,8 @@ function isBetter<T extends { identifier: string; name: string; quality?: string
  *   5. Label them with gender so the UI can show ♀ / ♂
  */
 export function deduplicateVoices<T extends { identifier: string; language: string; name: string; quality?: string }>(
-  voices: T[]
+  voices: T[],
+  genders?: Map<string, 'female' | 'male'>
 ): (T & { gender?: 'female' | 'male' })[] {
   const results: (T & { gender?: 'female' | 'male' })[] = [];
 
@@ -156,7 +192,10 @@ export function deduplicateVoices<T extends { identifier: string; language: stri
       localeMap.set(baseLocale, { female: null, male: null, fallback: null });
     }
     const group = localeMap.get(baseLocale)!;
-    const gender = guessGender(voice.identifier || voice.name);
+    const gender = guessGender(
+      voice.identifier || voice.name,
+      genders?.get(voice.identifier || voice.name)
+    );
 
     if (gender === 'female') {
       if (!group.female || isBetter(voice, group.female)) group.female = voice;

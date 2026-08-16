@@ -3,13 +3,15 @@ import { useFocusEffect } from 'expo-router';
 import {
   getLibrary,
   saveLibraryItem,
+  saveLibraryProgress,
   deleteLibraryItem,
   LibraryItem,
+  LibraryItemSummary,
 } from '@/utils/storage';
 import { generateId } from '@/utils/fileParser';
 
 export function useLibrary() {
-  const [items, setItems] = useState<LibraryItem[]>([]);
+  const [items, setItems] = useState<LibraryItemSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -36,6 +38,8 @@ export function useLibrary() {
         id: generateId(),
         title,
         text,
+        textLength: text.length,
+        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
         position: 0,
         createdAt: Date.now(),
         lastReadAt: Date.now(),
@@ -51,9 +55,9 @@ export function useLibrary() {
 
   const updatePosition = useCallback(
     async (id: string, position: number) => {
-      const item = items.find((i: LibraryItem) => i.id === id);
+      const item = items.find((i) => i.id === id);
       if (item) {
-        await saveLibraryItem({ ...item, position, lastReadAt: Date.now() });
+        await saveLibraryProgress(id, position);
       }
     },
     [items]

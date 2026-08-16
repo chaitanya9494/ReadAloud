@@ -2,13 +2,11 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Lazy-load react-native-iap so the app doesn't crash in Expo Go
-let IAP: typeof import('react-native-iap') | null = null;
-try {
-  IAP = require('react-native-iap');
-} catch {
-  console.warn('[IAP] react-native-iap not available (Expo Go). Purchases disabled.');
-}
+// Billing is not part of the shipped app yet. Keeping this optional path
+// disabled avoids bundling a missing native module (and its substantial
+// dependency footprint) into every production build. When Pro is launched,
+// wire it to Play Billing deliberately in a dedicated release.
+let IAP: any = null;
 
 const PRO_KEY = 'loudify_pro';
 const TIP_KEY = 'loudify_tips';

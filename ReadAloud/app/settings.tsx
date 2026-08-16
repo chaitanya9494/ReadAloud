@@ -7,92 +7,203 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
+  Linking,
+  NativeModules,
+  Alert,
+  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Speech from 'expo-speech';
+import * as EdgeTTS from '@/utils/edgeTTS';
+import type { EdgeSpeechVoice } from '@/utils/edgeTTS';
+import { getSherpaVoices, SherpaVoice, isModelReady, initSherpaTTS, sherpaSpeak, sherpaStop, extractBundledModel } from '@/utils/sherpaTTS';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing, FontSize } from '@/constants/theme';
-import { getSettings, saveSettings, AppSettings, DEFAULT_SETTINGS } from '@/utils/storage';
+import { getSettings, saveSettings, AppSettings, DEFAULT_SETTINGS, TTSEngine } from '@/utils/storage';
 import { useTheme } from '@/hooks/useTheme';
 import { friendlyVoiceName, friendlyLanguage, languageGroup, deduplicateVoices } from '@/utils/voiceNames';
+import { getSystemVoiceGenders, getSystemVoices, SystemVoice } from '@/utils/systemVoiceInfo';
+import { friendlyEdgeVoiceName } from '@/utils/edgeTTS';
 import { getSamplePhrase } from '@/utils/voiceSamples';
+import ShareButton from '@/components/ShareButton';
+import { logEvent, setAnalyticsCollectionEnabled } from '@/utils/analytics';
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
   const router = useRouter();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [voices, setVoices] = useState<(Speech.Voice & { gender?: 'female' | 'male' })[]>([]);
+  const [voices, setVoices] = useState<(SystemVoice & { gender?: 'female' | 'male' })[]>([]);
+  const [edgeVoices, setEdgeVoices] = useState<EdgeSpeechVoice[]>([]);
+  const [sherpaVoices, setSherpaVoices] = useState<SherpaVoice[]>([]);
+
+  const isEdge = settings.ttsEngine === 'edge';
+  const isSherpa = settings.ttsEngine === 'sherpa';
+  const activeVoices = isSherpa ? sherpaVoices : isEdge ? edgeVoices : voices;
   const [voiceSearch, setVoiceSearch] = useState('');
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [sherpaModelProgress, setSherpaModelProgress] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [s, v] = await Promise.all([
-        getSettings(),
-        Speech.getAvailableVoicesAsync(),
-      ]);
-      if (!cancelled) {
-        setSettings(s);
-        // Retry if voices are empty (Android sometimes needs a moment)
+      const s = await getSettings();
+      if (cancelled) return;
+      setSettings(s);
+
+      if (s.ttsEngine === 'sherpa') {
+        setSherpaVoices(getSherpaVoices());
+        setLoadingVoices(false);
+        return;
+      }
+
+      if (s.ttsEngine === 'edge') {
+        const cached = EdgeTTS.getCachedVoices();
+        if (cached) {
+          if (!cancelled) { setEdgeVoices(cached); setLoadingVoices(false); }
+          return;
+        }
+        setLoadingVoices(true);
+        try {
+          const v = await EdgeTTS.getVoices();
+          if (!cancelled) { setEdgeVoices(v); setLoadingVoices(false); }
+        } catch {
+          if (!cancelled) setLoadingVoices(false);
+        }
+      } else {
+        const v = await getSystemVoices();
+        if (cancelled) return;
         if (v.length > 0) {
-          setVoices(deduplicateVoices(v));
+          const genders = await getSystemVoiceGenders();
+          if (cancelled) return;
+          setVoices(deduplicateVoices(v, genders).map((voice) => ({
+            ...voice,
+            name: voice.name || voice.identifier,
+            language: voice.language || 'en-US',
+          })));
           setLoadingVoices(false);
         } else {
-          let retries = 0;
-          while (retries < 5 && !cancelled) {
-            await new Promise((r) => setTimeout(r, 500));
-            const retry = await Speech.getAvailableVoicesAsync();
-            if (retry.length > 0) {
-              setVoices(deduplicateVoices(retry));
-              break;
-            }
-            retries++;
-          }
           if (!cancelled) setLoadingVoices(false);
         }
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [settings.ttsEngine]);
 
   const update = async (partial: Partial<AppSettings>) => {
     const next = { ...settings, ...partial };
     setSettings(next);
     await saveSettings(partial);
-  };
-
-  const previewVoice = (voiceId?: string, lang?: string) => {
-    Speech.stop();
-    const phrase = getSamplePhrase(lang || 'en');
-    setPlayingId(voiceId ?? '__default');
-    Speech.speak(phrase, {
-      rate: settings.speechRate,
-      pitch: settings.speechPitch,
-      voice: voiceId,
-      onDone: () => setPlayingId(null),
-      onStopped: () => setPlayingId(null),
+    Object.keys(partial).forEach((key) => {
+      logEvent('settings_changed', {
+        setting_name: key,
+        value: String(partial[key as keyof AppSettings]),
+      });
     });
   };
 
-  // Filter voices by search term (name, language, or friendly name)
-  const filteredVoices = voices.filter((v) => {
-    if (!voiceSearch.trim()) return true;
-    const q = voiceSearch.toLowerCase();
-    const friendly = friendlyVoiceName(v.name, v.language).toLowerCase();
-    const friendlyLang = friendlyLanguage(v.language).toLowerCase();
-    return (
-      friendly.includes(q) ||
-      friendlyLang.includes(q) ||
-      v.name.toLowerCase().includes(q) ||
-      v.language.toLowerCase().includes(q)
-    );
-  });
+  const previewVoice = async (voiceId?: string, lang?: string) => {
+    const log = (m: string) => { try { NativeModules.ModelBundler?.writeLog?.(m); } catch {} };
+    log('previewVoice called: voiceId=' + voiceId + ' isSherpa=' + isSherpa);
+    EdgeTTS.stop();
+    sherpaStop();
+    const phrase = getSamplePhrase(lang || 'en');
 
-  // Group filtered voices by friendly language name
-  const groupedVoices: Record<string, Speech.Voice[]> = {};
-  filteredVoices.forEach((v) => {
+    if (isSherpa) {
+      const numId = voiceId ? parseInt(voiceId) : 0;
+      try {
+        const ready = await isModelReady();
+        log('model ready: ' + ready);
+        if (!ready) {
+          setPlayingId('__sherpa_dl_' + numId);
+          await extractBundledModel((p) => setSherpaModelProgress(p));
+          setSherpaModelProgress(null);
+        }
+        await initSherpaTTS();
+        setPlayingId(String(numId));
+        sherpaSpeak(phrase, {
+          voiceId: numId,
+          rate: settings.speechRate,
+          onDone: () => { setPlayingId(null); setSherpaModelProgress(null); },
+          onStopped: () => { setPlayingId(null); setSherpaModelProgress(null); },
+          onError: (e: any) => {
+            const msg = 'Speak error: ' + (e?.message || String(e));
+            log(msg);
+            setPlayingId(null);
+            setSherpaModelProgress(null);
+            Alert.alert('Sherpa TTS Error', msg);
+          },
+        });
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        log('ERROR: ' + msg);
+        setPlayingId(null);
+        setSherpaModelProgress(null);
+        Alert.alert('Sherpa TTS Error', msg);
+      }
+      return;
+    }
+
+    if (!isEdge) {
+      setPlayingId(voiceId ?? '__default');
+      Speech.speak(phrase, {
+        rate: settings.speechRate,
+        voice: voiceId,
+        onDone: () => setPlayingId(null),
+        onStopped: () => setPlayingId(null),
+        onError: () => { setPlayingId(null); Alert.alert('Voice Error', 'The selected standard voice could not be played.'); },
+      } as any);
+      return;
+    }
+
+    setPlayingId(voiceId ?? '__default');
+    EdgeTTS.speak(phrase, {
+      rate: settings.speechRate,
+      voice: voiceId || 'en-US-AriaNeural',
+      onDone: () => setPlayingId(null),
+      onStopped: () => setPlayingId(null),
+onError: (error) => {
+        setPlayingId(null);
+        const message = error?.message || 'Premium voice preview failed.';
+        try { NativeModules.ModelBundler?.writeLog?.('Premium preview error: ' + message); } catch {}
+        Alert.alert('Voice Preview Error', message);
+      },
+    });
+  };
+
+  // Filter voices by search term
+  const filteredVoices = isSherpa
+    ? sherpaVoices.filter((v) => {
+        if (!voiceSearch.trim()) return true;
+        const q = voiceSearch.toLowerCase();
+        return (
+              String(v.name || '').toLowerCase().includes(q) ||
+              String(v.language || '').toLowerCase().includes(q) ||
+              String(v.gender || '').toLowerCase().includes(q) ||
+              friendlyLanguage(v.language || 'en-US').toLowerCase().includes(q)
+        );
+      })
+    : (isEdge ? edgeVoices : voices).filter((v: any) => {
+        if (!voiceSearch.trim()) return true;
+        const q = voiceSearch.toLowerCase();
+        return (
+          String(v.name || '').toLowerCase().includes(q) ||
+          String(v.language || '').toLowerCase().includes(q) ||
+          String(v.gender || '').toLowerCase().includes(q) ||
+          friendlyLanguage(v.language || 'en-US').toLowerCase().includes(q)
+        );
+      });
+
+  // This screen is a ScrollView, unlike the reader picker. Keep its first
+  // render small; every voice remains available immediately through search.
+  const MAX_SETTINGS_VOICES = 60;
+  const displayedVoices = voiceSearch.trim()
+    ? filteredVoices
+    : filteredVoices.slice(0, MAX_SETTINGS_VOICES);
+
+  // Group only the voices that are currently displayed.
+  const groupedVoices: Record<string, any[]> = {};
+  displayedVoices.forEach((v: any) => {
     const lang = languageGroup(v.language);
     if (!groupedVoices[lang]) groupedVoices[lang] = [];
     groupedVoices[lang].push(v);
@@ -120,7 +231,10 @@ export default function SettingsScreen() {
         {THEMES.map((t) => (
           <TouchableOpacity
             key={t.value}
-            onPress={() => setMode(t.value)}
+            onPress={() => {
+              setMode(t.value);
+              logEvent('settings_changed', { setting_name: 'theme', value: t.value });
+            }}
             style={[
               styles.themeChip,
               {
@@ -131,6 +245,7 @@ export default function SettingsScreen() {
             ]}
             accessibilityLabel={`${t.label} theme`}
             accessibilityRole="button"
+            accessibilityState={{ selected: mode === t.value }}
           >
             <Ionicons
               name={t.icon as any}
@@ -168,6 +283,7 @@ export default function SettingsScreen() {
             ]}
             accessibilityLabel={`Speed ${r}x`}
             accessibilityRole="button"
+            accessibilityState={{ selected: settings.speechRate === r }}
           >
             <Text
               style={[
@@ -200,6 +316,7 @@ export default function SettingsScreen() {
             ]}
             accessibilityLabel={`Pitch ${p}`}
             accessibilityRole="button"
+            accessibilityState={{ selected: settings.speechPitch === p }}
           >
             <Text
               style={[
@@ -232,6 +349,7 @@ export default function SettingsScreen() {
             ]}
             accessibilityLabel={`Font size ${f}`}
             accessibilityRole="button"
+            accessibilityState={{ selected: settings.fontSize === f }}
           >
             <Text
               style={[
@@ -248,9 +366,54 @@ export default function SettingsScreen() {
         ))}
       </View>
 
+      {/* TTS Engine */}
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>Voice Engine</Text>
+      <View style={styles.optionRow}>
+        {([
+          { value: 'system' as TTSEngine, label: 'Device Voices', icon: 'phone-portrait-outline', desc: 'Uses your installed voices and works offline' },
+        ]).map((eng) => (
+          <TouchableOpacity
+            key={eng.value}
+            onPress={() => update({ ttsEngine: eng.value })}
+            style={[
+              styles.engineChip,
+              {
+                backgroundColor: settings.ttsEngine === eng.value ? colors.primary : colors.surfaceLight,
+                borderColor: colors.border,
+              },
+            ]}
+            accessibilityLabel={`${eng.label} engine`}
+            accessibilityRole="button"
+          >
+            <Ionicons
+              name={eng.icon as any}
+              size={18}
+              color={settings.ttsEngine === eng.value ? '#fff' : colors.text}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: settings.ttsEngine === eng.value ? '#fff' : colors.text, fontWeight: '600', fontSize: FontSize.sm }}>
+                {eng.label}
+              </Text>
+              <Text style={{ color: settings.ttsEngine === eng.value ? 'rgba(255,255,255,0.7)' : colors.textSecondary, fontSize: FontSize.xs }}>
+                {eng.desc}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {sherpaModelProgress !== null && (
+        <View style={[styles.privacyBox, { backgroundColor: colors.surfaceLight, borderColor: colors.border }]}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={[styles.privacyText, { color: colors.textSecondary }]}>
+            Downloading Sherpa model... {sherpaModelProgress}%
+          </Text>
+        </View>
+      )}
+
       {/* Voice selection with search */}
       <Text style={[styles.sectionTitle, { color: colors.text }]}>
-        Voice {loadingVoices ? '' : `(${voices.length} available)`}
+        Voice {loadingVoices ? '' : `(${activeVoices.length} device voices)`}
       </Text>
 
       {loadingVoices ? (
@@ -272,46 +435,64 @@ export default function SettingsScreen() {
                 borderColor: colors.border,
               },
             ]}
-            placeholder="Search by language (English, Spanish, Hindi...)"
+            placeholder="Search language, voice, or gender..."
             placeholderTextColor={colors.textSecondary}
             value={voiceSearch}
             onChangeText={setVoiceSearch}
             accessibilityLabel="Search voices"
           />
 
-          {/* System default */}
+          {/* System/Edge/Sherpa default */}
           <View style={[
             styles.voiceItem,
             {
-              backgroundColor: !settings.voiceId ? colors.primary : colors.surface,
+              backgroundColor: isSherpa
+                ? (!settings.sherpaVoiceId && settings.sherpaVoiceId !== 0 ? colors.primary : colors.surface)
+                : isEdge
+                  ? (!settings.edgeVoiceId ? colors.primary : colors.surface)
+                  : (!settings.voiceId ? colors.primary : colors.surface),
               borderColor: colors.border,
             },
           ]}>
             <TouchableOpacity
-              onPress={() => update({ voiceId: undefined })}
+              onPress={() => isSherpa ? update({ sherpaVoiceId: undefined }) : isEdge ? update({ edgeVoiceId: undefined }) : update({ voiceId: undefined })}
               style={styles.voiceInfo}
-              accessibilityLabel="Use default system voice"
+              accessibilityLabel={isSherpa ? 'Use default sherpa voice' : isEdge ? 'Use default premium voice' : 'Use default standard voice'}
               accessibilityRole="button"
             >
               <Ionicons
-                name={!settings.voiceId ? 'radio-button-on' : 'radio-button-off'}
-                size={20} color={!settings.voiceId ? '#fff' : colors.textSecondary}
+                name={
+                  (isSherpa ? (!settings.sherpaVoiceId && settings.sherpaVoiceId !== 0) : isEdge ? !settings.edgeVoiceId : !settings.voiceId)
+                    ? 'radio-button-on' : 'radio-button-off'
+                }
+                size={20}
+                color={
+                  (isSherpa ? (!settings.sherpaVoiceId && settings.sherpaVoiceId !== 0) : isEdge ? !settings.edgeVoiceId : !settings.voiceId)
+                    ? '#fff' : colors.textSecondary
+                }
               />
-              <Text style={{ color: !settings.voiceId ? '#fff' : colors.text, fontWeight: '500' }}>
-                System Default
+              <Text style={{
+                color: (isSherpa ? (!settings.sherpaVoiceId && settings.sherpaVoiceId !== 0) : isEdge ? !settings.edgeVoiceId : !settings.voiceId)
+                  ? '#fff' : colors.text,
+                fontWeight: '500'
+              }}>
+                {isSherpa ? 'Default Sherpa Voice (af_alloy)' : isEdge ? 'Default Premium Voice' : 'Device default voice'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => previewVoice(undefined, 'en')}
               style={[styles.playBtn, {
-                backgroundColor: !settings.voiceId ? 'rgba(255,255,255,0.2)' : colors.surfaceLight,
+                backgroundColor: (isSherpa ? (!settings.sherpaVoiceId && settings.sherpaVoiceId !== 0) : isEdge ? !settings.edgeVoiceId : !settings.voiceId)
+                  ? 'rgba(255,255,255,0.2)' : colors.surfaceLight,
               }]}
               accessibilityLabel="Preview default voice"
               accessibilityRole="button"
             >
               <Ionicons
                 name={playingId === '__default' ? 'volume-high' : 'play'}
-                size={16} color={!settings.voiceId ? '#fff' : colors.primary}
+                size={16}
+                color={(isSherpa ? (!settings.sherpaVoiceId && settings.sherpaVoiceId !== 0) : isEdge ? !settings.edgeVoiceId : !settings.voiceId)
+                  ? '#fff' : colors.primary}
               />
             </TouchableOpacity>
           </View>
@@ -322,11 +503,22 @@ export default function SettingsScreen() {
               <Text style={[styles.langHeader, { color: colors.textSecondary }]}>
                 {lang} ({groupedVoices[lang].length})
               </Text>
-              {groupedVoices[lang].map((v) => {
-                const isSelected = settings.voiceId === v.identifier;
+              {groupedVoices[lang].map((v: any) => {
+                const voiceId = isSherpa ? String(v.id) : v.identifier;
+                const isSelected = isSherpa
+                  ? settings.sherpaVoiceId === v.id
+                  : isEdge
+                    ? settings.edgeVoiceId === voiceId
+                    : settings.voiceId === voiceId;
+const voiceName = isSherpa
+                  ? `Sherpa · ${v.name}`
+                  : isEdge
+                    ? `Premium · ${friendlyEdgeVoiceName(v.name)}`
+                    : `Standard · ${friendlyVoiceName(v.name, v.language || 'en-US', v.gender)}`;
+                const subtitle = `${friendlyLanguage(v.language || 'en-US')} · ${v.gender || 'Unknown'}`;
                 return (
                   <View
-                    key={v.identifier}
+                    key={voiceId}
                     style={[
                       styles.voiceItem,
                       {
@@ -336,9 +528,14 @@ export default function SettingsScreen() {
                     ]}
                   >
                     <TouchableOpacity
-                      onPress={() => update({ voiceId: v.identifier })}
+                      onPress={() => isSherpa
+                        ? update({ sherpaVoiceId: v.id })
+                        : isEdge
+                          ? update({ edgeVoiceId: voiceId })
+                          : update({ voiceId: voiceId })
+                      }
                       style={styles.voiceInfo}
-                      accessibilityLabel={`${isSelected ? 'Selected: ' : 'Select '}${friendlyVoiceName(v.name, v.language)}`}
+                      accessibilityLabel={`${isSelected ? 'Selected: ' : 'Select '}${voiceName}`}
                       accessibilityRole="button"
                     >
                       <Ionicons
@@ -347,7 +544,7 @@ export default function SettingsScreen() {
                       />
                       <View style={{ flex: 1 }}>
                         <Text style={{ color: isSelected ? '#fff' : colors.text, fontWeight: '500' }}>
-                          {friendlyVoiceName(v.name, v.language, (v as any).gender)}
+                          {voiceName}
                         </Text>
                         <Text
                           style={{
@@ -355,20 +552,20 @@ export default function SettingsScreen() {
                             fontSize: FontSize.xs,
                           }}
                         >
-                          {friendlyLanguage(v.language)} · {v.quality === 'Enhanced' ? 'HD' : 'Standard'}
+                          {subtitle}
                         </Text>
                       </View>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={() => previewVoice(v.identifier, v.language)}
+                      onPress={() => previewVoice(voiceId, v.language)}
                       style={[styles.playBtn, {
                         backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : colors.surfaceLight,
                       }]}
-                      accessibilityLabel={`Preview ${friendlyVoiceName(v.name, v.language)}`}
+                      accessibilityLabel={`Preview ${voiceName}`}
                       accessibilityRole="button"
                     >
                       <Ionicons
-                        name={playingId === v.identifier ? 'volume-high' : 'play'}
+                        name={playingId === voiceId ? 'volume-high' : 'play'}
                         size={16} color={isSelected ? '#fff' : colors.primary}
                       />
                     </TouchableOpacity>
@@ -378,6 +575,12 @@ export default function SettingsScreen() {
             </View>
           ))}
 
+          {!voiceSearch.trim() && filteredVoices.length > MAX_SETTINGS_VOICES && (
+            <Text style={[styles.noResults, { color: colors.textSecondary }]}>
+              Showing {MAX_SETTINGS_VOICES} of {filteredVoices.length} voices. Search to find any voice.
+            </Text>
+          )}
+
           {filteredVoices.length === 0 && voiceSearch.trim() && (
             <Text style={[styles.noResults, { color: colors.textSecondary }]}>
               No voices match "{voiceSearch}"
@@ -385,6 +588,39 @@ export default function SettingsScreen() {
           )}
         </>
       )}
+
+      {/* Anonymous diagnostics opt-out */}
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>Privacy</Text>
+      <View style={[styles.settingRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={styles.settingRowText}>
+          <Text style={[styles.settingLabel, { color: colors.text }]}>Help improve Loudify</Text>
+          <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
+            Share anonymous usage, performance, and crash diagnostics. Text content is never collected.
+          </Text>
+        </View>
+        <Switch
+          value={settings.analyticsEnabled}
+          onValueChange={(enabled) => {
+            setAnalyticsCollectionEnabled(enabled);
+            void update({ analyticsEnabled: enabled });
+          }}
+          trackColor={{ false: colors.border, true: colors.primary }}
+          accessibilityLabel="Toggle anonymous analytics"
+          accessibilityRole="switch"
+        />
+      </View>
+
+      {/* Help spread the word */}
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>
+        Help & Feedback
+      </Text>
+
+      <ShareButton
+        variant="app"
+        sourceScreen="settings"
+        layout="row"
+        style={{ marginBottom: Spacing.sm }}
+      />
 
       {/* Privacy & Terms link */}
       <TouchableOpacity
@@ -409,6 +645,46 @@ export default function SettingsScreen() {
         <Text style={[styles.privacyText, { color: colors.textSecondary }]}>
           Everything stays on your device. No accounts, no servers, no tracking.
           Your text is never uploaded anywhere.
+        </Text>
+      </View>
+
+      {/* Daily Apps Kit Branding Card */}
+      <View style={[styles.brandingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={styles.brandingLogo}>
+          <View style={styles.brandingLogoRow}>
+            <View style={[styles.brandingSquare, { backgroundColor: colors.primary }]} />
+            <View style={[styles.brandingSquare, { backgroundColor: colors.primary }]} />
+          </View>
+          <View style={styles.brandingLogoRow}>
+            <View style={[styles.brandingSquare, { backgroundColor: colors.primary }]} />
+            <View style={[styles.brandingSquare, { backgroundColor: colors.primary }]} />
+          </View>
+        </View>
+        <Text style={[styles.brandingName, { color: colors.text }]}>Daily Apps Kit</Text>
+        <Text style={[styles.brandingTagline, { color: colors.textSecondary }]}>
+          Simple Apps for Everyday Life
+        </Text>
+        <View style={styles.brandingLinks}>
+          <TouchableOpacity
+            onPress={() => Linking.openURL('https://www.dailyappskit.com')}
+            accessibilityLabel="Visit Daily Apps Kit website"
+            accessibilityRole="link"
+          >
+            <Text style={[styles.brandingLink, { color: colors.primary }]}>Website</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => Linking.openURL('https://play.google.com/store/apps/developer?id=Daily%20Apps%20Kit')}
+            accessibilityLabel="View more apps by Daily Apps Kit"
+            accessibilityRole="link"
+          >
+            <Text style={[styles.brandingLink, { color: colors.primary }]}>More Apps</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={[styles.brandingFooter, { color: colors.textSecondary }]}>
+          No ads · No subscriptions · No tracking
+        </Text>
+        <Text style={[styles.brandingCopyright, { color: colors.textSecondary }]}>
+          © 2026 Daily Apps Kit
         </Text>
       </View>
     </ScrollView>
@@ -436,6 +712,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   themeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  engineChip: {
+    flex: 1,
+    minWidth: 150,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
@@ -499,6 +786,17 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     fontSize: FontSize.sm,
   },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderRadius: 12,
+  },
+  settingRowText: { flex: 1 },
+  settingLabel: { fontSize: FontSize.md, fontWeight: '600' },
+  settingDescription: { fontSize: FontSize.sm, marginTop: 2, lineHeight: 19 },
   privacyLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -527,9 +825,49 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     lineHeight: 20,
   },
-  helperText: {
-    fontSize: FontSize.xs,
-    lineHeight: 18,
-    marginBottom: Spacing.sm,
+  brandingCard: {
+    alignItems: 'center',
+    padding: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: Spacing.xl,
+  },
+  brandingLogo: {
+    marginBottom: 12,
+  },
+  brandingLogoRow: {
+    flexDirection: 'row',
+    gap: 5,
+    marginBottom: 5,
+  },
+  brandingSquare: {
+    width: 16,
+    height: 16,
+    borderRadius: 3,
+  },
+  brandingName: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  brandingTagline: {
+    fontSize: FontSize.sm,
+    marginBottom: 16,
+  },
+  brandingLinks: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 12,
+  },
+  brandingLink: {
+    fontSize: FontSize.sm,
+    fontWeight: '500',
+  },
+  brandingFooter: {
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  brandingCopyright: {
+    fontSize: 10,
   },
 });

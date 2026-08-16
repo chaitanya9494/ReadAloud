@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Text, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spacing, FontSize } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 
@@ -34,6 +35,10 @@ export default function PlayerControls({
   onRateChange,
 }: Props) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Platform.OS === 'android'
+    ? Math.max(insets.bottom, 44) + Spacing.sm
+    : insets.bottom + Spacing.lg;
 
   const cycleRate = () => {
     const idx = RATES.indexOf(speechRate);
@@ -42,7 +47,16 @@ export default function PlayerControls({
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          paddingBottom: bottomPadding,
+        },
+      ]}
+    >
       {/* Progress bar */}
       <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
         <View
@@ -118,7 +132,6 @@ export default function PlayerControls({
 const styles = StyleSheet.create({
   container: {
     borderTopWidth: 1,
-    paddingBottom: Spacing.lg,
     paddingHorizontal: Spacing.md,
   },
   progressTrack: {

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Spacing, FontSize } from '@/constants/theme';
 import { extractText } from '@/utils/fileParser';
 import { useTheme } from '@/hooks/useTheme';
+import { logEvent } from '@/utils/analytics';
 
 interface Props {
   onTextLoaded: (text: string, fileName: string) => void;
@@ -27,7 +28,6 @@ export default function FilePickerButton({ onTextLoaded }: Props) {
           'application/pdf',
           'application/epub+zip',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          '*/*', // Allow all as fallback — we detect by extension
         ],
         copyToCacheDirectory: true,
       });
@@ -39,7 +39,11 @@ export default function FilePickerButton({ onTextLoaded }: Props) {
       const text = await extractText(asset.uri, asset.mimeType ?? undefined);
       onTextLoaded(text, asset.name);
     } catch (err: any) {
-      Alert.alert('Could not read file', err.message);
+      logEvent('import_failed', { source: 'file' });
+      const message = typeof err?.message === 'string' && err.message.trim()
+        ? err.message
+        : 'This file could not be read. Please try a supported file under 2 MB.';
+      Alert.alert('Could not read file', message);
     } finally {
       setLoading(false);
     }

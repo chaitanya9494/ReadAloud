@@ -30,9 +30,14 @@ const PRIVACY_SECTIONS = [
     body: 'All text-to-speech processing happens entirely on your device using built-in system voices. Your text, files, and scanned content are never sent to any external server.',
   },
   {
-    icon: 'cloud-offline-outline',
-    title: 'No Data Collection',
-    body: 'Loudify does not collect, store, or transmit any personal data. We have no servers, no analytics, and no tracking of any kind.',
+    icon: 'chart-bar-outline',
+    title: 'Anonymous Analytics, Performance & Crash Reports',
+    body: 'To help us fix bugs and improve the app, Loudify collects anonymous usage analytics, performance metrics, and crash reports via Firebase. This includes events like "playback started" and "file opened", crash stack traces, and app-startup timing. No text content, file contents, or personal information is ever sent. You can disable this at any time in Settings → "Help improve Loudify".',
+  },
+  {
+    icon: 'cloud-download-outline',
+    title: 'In-App Updates',
+    body: 'Loudify uses Google Play\'s In-App Updates API to check for new versions. When an update is available, you can choose to download it in the background. No information about you is sent to Google beyond what Play Store normally uses to check for app updates.',
   },
   {
     icon: 'folder-outline',
@@ -98,7 +103,7 @@ export default function PrivacyScreen() {
         <Text style={[styles.heading, { color: colors.text }]}>Privacy Policy</Text>
       </View>
       <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-        Last updated: March 2026
+        Last updated: June 2026
       </Text>
       <Text style={[styles.intro, { color: colors.textSecondary }]}>
         Loudify is built with privacy as a core principle. Here's exactly how your data is handled:
@@ -114,7 +119,7 @@ export default function PrivacyScreen() {
         <Text style={[styles.heading, { color: colors.text }]}>Terms of Service</Text>
       </View>
       <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-        Last updated: March 2026
+        Last updated: June 2026
       </Text>
 
       {TOS_SECTIONS.map((s) => (
@@ -125,7 +130,27 @@ export default function PrivacyScreen() {
       <View style={[styles.contactBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Ionicons name="mail-outline" size={20} color={colors.primary} />
         <Text style={[styles.contactText, { color: colors.textSecondary }]}>
-          Questions or concerns? Contact us at support@loudify.app
+          Questions or concerns? Contact us at hello@dailyappskit.com
+        </Text>
+      </View>
+
+      {/* Daily Apps Kit Branding */}
+      <View style={[styles.brandingBox, { backgroundColor: colors.surfaceLight, borderColor: colors.border }]}>
+        <View style={styles.brandingLogo}>
+          <View style={styles.brandingLogoRow}>
+            <View style={[styles.brandingSquare, { backgroundColor: colors.primary }]} />
+            <View style={[styles.brandingSquare, { backgroundColor: colors.primary }]} />
+          </View>
+          <View style={styles.brandingLogoRow}>
+            <View style={[styles.brandingSquare, { backgroundColor: colors.primary }]} />
+            <View style={[styles.brandingSquare, { backgroundColor: colors.primary }]} />
+          </View>
+        </View>
+        <Text style={[styles.brandingText, { color: colors.textSecondary }]}>
+          A Daily Apps Kit product
+        </Text>
+        <Text style={[styles.brandingTagline, { color: colors.textSecondary }]}>
+          Simple Apps for Everyday Life
         </Text>
       </View>
     </ScrollView>
@@ -166,4 +191,32 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xl,
   },
   contactText: { flex: 1, fontSize: FontSize.sm, lineHeight: 20 },
+  brandingBox: {
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: Spacing.md,
+  },
+  brandingLogo: {
+    marginBottom: 8,
+  },
+  brandingLogoRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 4,
+  },
+  brandingSquare: {
+    width: 12,
+    height: 12,
+    borderRadius: 2,
+  },
+  brandingText: {
+    fontSize: FontSize.xs,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  brandingTagline: {
+    fontSize: 10,
+  },
 });

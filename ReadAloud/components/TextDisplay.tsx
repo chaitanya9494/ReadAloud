@@ -1,5 +1,5 @@
-import React, { useRef, useCallback } from 'react';
-import { ScrollView, Text, StyleSheet, View, LayoutChangeEvent, Pressable } from 'react-native';
+import React, { useRef, useCallback, useEffect, useMemo } from 'react';
+import { FlatList, Text, StyleSheet, View, Pressable } from 'react-native';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 
@@ -16,6 +16,11 @@ interface Props {
   onTapSentence?: (charIndex: number) => void;
 }
 
+interface SentenceChunk {
+  text: string;
+  startIndex: number;
+}
+
 export default function TextDisplay({
   text,
   highlightIndex,
@@ -26,25 +31,29 @@ export default function TextDisplay({
   onTapSentence,
 }: Props) {
   const { colors } = useTheme();
-  const scrollRef = useRef<ScrollView>(null);
-  const activeY = useRef(0);
-  const scrollViewHeight = useRef(0);
+  const listRef = useRef<FlatList<SentenceChunk>>(null);
+  const lastScrolledIndex = useRef(-1);
 
-  // Split into sentences
-  const sentences = text.match(/[^.!?\n]+[.!?\n]*/g) || [text];
-  let offset = 0;
-  const sentenceChunks = sentences.map((s) => {
-    const chunk = { text: s, startIndex: offset };
-    offset += s.length;
-    return chunk;
-  });
+  // Memoizing and virtualizing sentence rows keeps book-length documents from
+  // creating thousands of native views on every word-boundary update.
+  const sentenceChunks = useMemo(() => {
+    const sentences = text.match(/[^.!?\n]+[.!?\n]*/g) || [text];
+    let offset = 0;
+    return sentences.map((sentence) => {
+      const chunk = { text: sentence, startIndex: offset };
+      offset += sentence.length;
+      return chunk;
+    });
+  }, [text]);
 
-  // Find active sentence
-  const activeIdx = sentenceChunks.findIndex(
-    (c, i) =>
-      highlightIndex >= c.startIndex &&
-      (i === sentenceChunks.length - 1 ||
-        highlightIndex < sentenceChunks[i + 1].startIndex)
+  const activeIdx = useMemo(
+    () => sentenceChunks.findIndex(
+      (chunk, index) =>
+        highlightIndex >= chunk.startIndex &&
+        (index === sentenceChunks.length - 1 ||
+          highlightIndex < sentenceChunks[index + 1].startIndex)
+    ),
+    [highlightIndex, sentenceChunks]
   );
 
   const hasWordHighlight =
@@ -53,20 +62,26 @@ export default function TextDisplay({
     wordLength !== undefined &&
     wordLength > 0;
 
-  const handleActiveLayout = useCallback(
-    (e: LayoutChangeEvent) => {
-      activeY.current = e.nativeEvent.layout.y;
-      if (isPlaying && scrollRef.current) {
-        const targetY = Math.max(0, activeY.current - scrollViewHeight.current * 0.3);
-        scrollRef.current.scrollTo({ y: targetY, animated: true });
-      }
-    },
-    [isPlaying]
-  );
+  useEffect(() => {
+    if (!isPlaying || activeIdx < 0 || activeIdx === lastScrolledIndex.current) return;
+    lastScrolledIndex.current = activeIdx;
 
-  const handleScrollViewLayout = useCallback((e: LayoutChangeEvent) => {
-    scrollViewHeight.current = e.nativeEvent.layout.height;
-  }, []);
+    // Wait until FlatList has rendered its initial window before requesting a
+    // distant sentence. scrollToIndex keeps the highlighted sentence readable
+    // without mounting the entire document.
+    const frame = requestAnimationFrame(() => {
+      listRef.current?.scrollToIndex({
+        index: activeIdx,
+        animated: true,
+        viewPosition: 0.3,
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeIdx, isPlaying]);
+
+  useEffect(() => {
+    if (!isPlaying) lastScrolledIndex.current = -1;
+  }, [isPlaying]);
 
   /**
    * Render sentence text with optional word-level highlight.
@@ -135,29 +150,41 @@ export default function TextDisplay({
     );
   };
 
+  const renderItem = useCallback(({ item, index }: { item: SentenceChunk; index: number }) => {
+    const isActive = index === activeIdx;
+    return (
+      <View>
+        <Pressable
+          onPress={() => onTapSentence?.(item.startIndex)}
+          accessibilityLabel={`Sentence ${index + 1}. Tap to start reading here.`}
+          accessibilityRole="button"
+        >
+          {renderSentenceText(item, isActive)}
+        </Pressable>
+      </View>
+    );
+  }, [activeIdx, colors, fontSize, hasWordHighlight, isPlaying, onTapSentence, wordCharIndex, wordLength]);
+
   return (
-    <ScrollView
-      ref={scrollRef}
+    <FlatList
+      ref={listRef}
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
-      onLayout={handleScrollViewLayout}
-    >
-      {sentenceChunks.map((chunk, i) => {
-        const isActive = i === activeIdx;
-        return (
-          <View key={i} onLayout={isActive ? handleActiveLayout : undefined}>
-            <Pressable
-              onPress={() => onTapSentence?.(chunk.startIndex)}
-              accessibilityLabel={`Sentence ${i + 1}. Tap to start reading here.`}
-              accessibilityRole="button"
-            >
-              {renderSentenceText(chunk, isActive)}
-            </Pressable>
-          </View>
-        );
-      })}
-    </ScrollView>
+      data={sentenceChunks}
+      renderItem={renderItem}
+      keyExtractor={(item) => String(item.startIndex)}
+      initialNumToRender={14}
+      maxToRenderPerBatch={12}
+      windowSize={7}
+      removeClippedSubviews
+      onScrollToIndexFailed={(info) => {
+        listRef.current?.scrollToOffset({
+          offset: info.averageItemLength * info.index,
+          animated: false,
+        });
+      }}
+    />
   );
 }
 

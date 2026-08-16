@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Spacing, FontSize } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
+import { logEvent } from '@/utils/analytics';
 
 const { width } = Dimensions.get('window');
 
@@ -64,11 +65,12 @@ export default function OnboardingScreen() {
     if (activeIndex < SLIDES.length - 1) {
       flatListRef.current?.scrollToIndex({ index: activeIndex + 1 });
     } else {
-      handleFinish();
+      handleFinish(false);
     }
   };
 
-  const handleFinish = async () => {
+  const handleFinish = async (skipped: boolean = false) => {
+    logEvent('onboarding_completed', { slides_seen: skipped ? activeIndex + 1 : SLIDES.length, skipped });
     await markOnboardingDone();
     router.replace('/');
   };
@@ -122,7 +124,7 @@ export default function OnboardingScreen() {
       <View style={styles.buttonRow}>
         {!isLast && (
           <TouchableOpacity
-            onPress={handleFinish}
+            onPress={() => handleFinish(true)}
             style={styles.skipBtn}
             accessibilityLabel="Skip onboarding"
             accessibilityRole="button"

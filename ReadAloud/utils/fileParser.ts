@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import { startTrace } from '@/utils/analytics';
 
 /**
  * Extract readable text from a picked file.
@@ -7,46 +8,76 @@ import * as FileSystem from 'expo-file-system/legacy';
  * EPUB extraction unzips and parses the XHTML content.
  */
 export async function extractText(uri: string, mimeType?: string): Promise<string> {
-  const ext = uri.split('.').pop()?.toLowerCase();
+  const ext = uri.split('?')[0].split('.').pop()?.toLowerCase();
+  const trace = startTrace(`file_parse_${ext || 'unknown'}`);
+  trace.putAttribute('file_ext', ext || 'unknown');
+  trace.putAttribute('mime_type', mimeType || 'unknown');
+
+  const info = await FileSystem.getInfoAsync(uri);
+  if (!info.exists) {
+    await trace.stop();
+    throw new Error('The selected file is no longer available. Please choose it again.');
+  }
+  // PDF and EPUB parsing creates base64 and decoded copies in memory. A hard
+  // ceiling protects lower-memory phones from a media/binary file OOM.
+  const maxBytes = 2 * 1024 * 1024;
+  if (typeof info.size === 'number' && info.size > maxBytes) {
+    await trace.stop();
+    throw new Error('This file is larger than 2 MB. Please use a smaller text document.');
+  }
 
   // Plain text
   if (ext === 'txt' || ext === 'md' || ext === 'csv' || mimeType === 'text/plain') {
-    return await FileSystem.readAsStringAsync(uri);
+    const text = await FileSystem.readAsStringAsync(uri);
+    trace.putMetric('text_length', text.length);
+    await trace.stop();
+    return text;
   }
 
   // HTML files
   if (ext === 'html' || ext === 'htm' || mimeType === 'text/html') {
     const html = await FileSystem.readAsStringAsync(uri);
-    return stripHtmlTags(html);
+    const text = stripHtmlTags(html);
+    trace.putMetric('text_length', text.length);
+    await trace.stop();
+    return text;
   }
 
   // PDF — read as base64 and extract text streams
   if (ext === 'pdf' || mimeType === 'application/pdf') {
-    return await extractPdfText(uri);
+    const text = await extractPdfText(uri);
+    trace.putMetric('text_length', text.length);
+    await trace.stop();
+    return text;
   }
 
   // EPUB — unzip and extract chapter text
   if (ext === 'epub' || mimeType === 'application/epub+zip') {
-    return await extractEpubText(uri);
+    const text = await extractEpubText(uri);
+    trace.putMetric('text_length', text.length);
+    await trace.stop();
+    return text;
   }
 
   // DOCX — unzip and extract document.xml text
   if (ext === 'docx' || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-    return await extractDocxText(uri);
+    const text = await extractDocxText(uri);
+    trace.putMetric('text_length', text.length);
+    await trace.stop();
+    return text;
   }
 
   // RTF — basic text extraction
   if (ext === 'rtf' || mimeType === 'application/rtf') {
     const raw = await FileSystem.readAsStringAsync(uri);
-    return stripRtf(raw);
+    const text = stripRtf(raw);
+    trace.putMetric('text_length', text.length);
+    await trace.stop();
+    return text;
   }
 
-  // Fallback: try reading as text
-  try {
-    return await FileSystem.readAsStringAsync(uri);
-  } catch {
-    throw new Error('Could not read this file type. Try pasting the text directly.');
-  }
+  await trace.stop();
+  throw new Error('Unsupported file type. Choose TXT, PDF, EPUB, DOCX, HTML, Markdown, CSV, or RTF.');
 }
 
 /**
