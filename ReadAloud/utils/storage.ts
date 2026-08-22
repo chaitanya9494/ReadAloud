@@ -32,7 +32,7 @@ export interface LibraryItem extends LibraryItemSummary { text: string; }
 export type TTSEngine = 'system' | 'piper' | 'edge' | 'sherpa';
 
 export interface AppSettings {
-  speechRate: number; speechPitch: number; voiceId?: string;
+  speechRate: number; speechPitch: number; voiceId?: string; voiceLanguage?: string;
   theme: 'dark' | 'light' | 'system'; fontSize: number; highlightColor: string;
   sleepTimerMinutes: number | null; ttsEngine: TTSEngine; piperVoiceId?: string;
   edgeVoiceId?: string; sherpaVoiceId?: number; piperServerUrl: string;
@@ -45,7 +45,7 @@ export interface ProEntitlement { type: 'grandfathered'; installedAt: string; }
 // AsyncStorage and the React Native bridge must both hold a document while it
 // is persisted. This ceiling prevents one pasted/imported document from
 // exhausting the heap on lower-memory phones.
-export const MAX_DOCUMENT_CHARS = 1_000_000;
+export const MAX_DOCUMENT_CHARS = 300_000;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   speechRate: 1, speechPitch: 1, theme: 'dark', fontSize: 18,
@@ -61,7 +61,21 @@ const summaryFrom = (item: LibraryItem): LibraryItemSummary => ({
   createdAt: item.createdAt, lastReadAt: item.lastReadAt, source: item.source,
   fileName: item.fileName, bookmarks: item.bookmarks,
 });
-const countWords = (text: string) => text.trim() ? text.trim().split(/\s+/).length : 0;
+/** Count words without allocating a large temporary array for long documents. */
+export const countWords = (text: string): number => {
+  let count = 0;
+  let inWord = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const whitespace = /\s/.test(text[index]);
+    if (!whitespace && !inWord) {
+      count += 1;
+      inWord = true;
+    } else if (whitespace) {
+      inWord = false;
+    }
+  }
+  return count;
+};
 
 /**
  * Separates documents from the library index. The old single-value library is
@@ -129,7 +143,7 @@ export async function getLibraryItem(id: string): Promise<LibraryItem | null> {
 
 export async function saveLibraryItem(item: LibraryItem): Promise<void> {
   if (item.text.length > MAX_DOCUMENT_CHARS) {
-    throw new Error('This document is too large to store safely. Please use a document under 1,000,000 characters.');
+    throw new Error('This document is too large to store safely. Please use a document under 300,000 characters.');
   }
   const index = await ensureLibraryMigrated();
   const summary = summaryFrom(item);
@@ -156,6 +170,28 @@ export async function deleteLibraryItem(id: string): Promise<void> {
   const index = await ensureLibraryMigrated();
   await AsyncStorage.setItem(KEYS.LIBRARY_INDEX, JSON.stringify(index.filter((item) => item.id !== id)));
   await AsyncStorage.removeItem(documentKey(id));
+}
+
+/**
+ * Delete several documents with one index write.  The Library screen uses
+ * this for multi-select deletion so a large cleanup does not repeatedly
+ * serialize the complete library or refresh the UI for every item.
+ */
+export async function deleteLibraryItems(ids: Iterable<string>): Promise<void> {
+  const idsToDelete = new Set(ids);
+  if (idsToDelete.size === 0) return;
+
+  const index = await ensureLibraryMigrated();
+  const existingIds = index
+    .filter((item) => idsToDelete.has(item.id))
+    .map((item) => item.id);
+  if (existingIds.length === 0) return;
+
+  await AsyncStorage.setItem(
+    KEYS.LIBRARY_INDEX,
+    JSON.stringify(index.filter((item) => !idsToDelete.has(item.id))),
+  );
+  await AsyncStorage.multiRemove(existingIds.map(documentKey));
 }
 
 // --- Settings ---

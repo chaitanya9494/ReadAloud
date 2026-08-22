@@ -19,7 +19,7 @@ import type { EdgeSpeechVoice } from '@/utils/edgeTTS';
 import { getSherpaVoices, SherpaVoice, isModelReady, initSherpaTTS, sherpaSpeak, sherpaStop, extractBundledModel } from '@/utils/sherpaTTS';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing, FontSize } from '@/constants/theme';
-import { getSettings, saveSettings, AppSettings, DEFAULT_SETTINGS, TTSEngine } from '@/utils/storage';
+import { getSettings, saveSettings, AppSettings, DEFAULT_SETTINGS } from '@/utils/storage';
 import { useTheme } from '@/hooks/useTheme';
 import { friendlyVoiceName, friendlyLanguage, languageGroup, deduplicateVoices } from '@/utils/voiceNames';
 import { getSystemVoiceGenders, getSystemVoices, SystemVoice } from '@/utils/systemVoiceInfo';
@@ -97,7 +97,9 @@ export default function SettingsScreen() {
     Object.keys(partial).forEach((key) => {
       logEvent('settings_changed', {
         setting_name: key,
-        value: String(partial[key as keyof AppSettings]),
+        // Voice identifiers are OEM-specific and high-cardinality. Record
+        // that a voice changed, but keep detailed reporting to its locale.
+        value: key === 'voiceId' ? 'selected' : String(partial[key as keyof AppSettings]),
       });
     });
   };
@@ -366,42 +368,6 @@ onError: (error) => {
         ))}
       </View>
 
-      {/* TTS Engine */}
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>Voice Engine</Text>
-      <View style={styles.optionRow}>
-        {([
-          { value: 'system' as TTSEngine, label: 'Device Voices', icon: 'phone-portrait-outline', desc: 'Uses your installed voices and works offline' },
-        ]).map((eng) => (
-          <TouchableOpacity
-            key={eng.value}
-            onPress={() => update({ ttsEngine: eng.value })}
-            style={[
-              styles.engineChip,
-              {
-                backgroundColor: settings.ttsEngine === eng.value ? colors.primary : colors.surfaceLight,
-                borderColor: colors.border,
-              },
-            ]}
-            accessibilityLabel={`${eng.label} engine`}
-            accessibilityRole="button"
-          >
-            <Ionicons
-              name={eng.icon as any}
-              size={18}
-              color={settings.ttsEngine === eng.value ? '#fff' : colors.text}
-            />
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: settings.ttsEngine === eng.value ? '#fff' : colors.text, fontWeight: '600', fontSize: FontSize.sm }}>
-                {eng.label}
-              </Text>
-              <Text style={{ color: settings.ttsEngine === eng.value ? 'rgba(255,255,255,0.7)' : colors.textSecondary, fontSize: FontSize.xs }}>
-                {eng.desc}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
-
       {sherpaModelProgress !== null && (
         <View style={[styles.privacyBox, { backgroundColor: colors.surfaceLight, borderColor: colors.border }]}>
           <ActivityIndicator size="small" color={colors.primary} />
@@ -532,7 +498,7 @@ const voiceName = isSherpa
                         ? update({ sherpaVoiceId: v.id })
                         : isEdge
                           ? update({ edgeVoiceId: voiceId })
-                          : update({ voiceId: voiceId })
+                          : update({ voiceId: voiceId, voiceLanguage: v.language || 'und' })
                       }
                       style={styles.voiceInfo}
                       accessibilityLabel={`${isSelected ? 'Selected: ' : 'Select '}${voiceName}`}

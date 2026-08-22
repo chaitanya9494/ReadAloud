@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { AppState, View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing, FontSize } from '@/constants/theme';
@@ -47,6 +47,7 @@ export default function ReaderScreen() {
   const [showReviewPrompt, setShowReviewPrompt] = useState(false);
   const sessionStart = useRef<number | null>(null);
   const wordsAtStart = useRef(0);
+  const charsAtStart = useRef(0);
   const completedHandled = useRef(false);
   const stopRequested = useRef(false);
   const autoPlayStarted = useRef(false);
@@ -171,12 +172,18 @@ export default function ReaderScreen() {
     if (tts.isPlaying && !sessionStart.current) {
       sessionStart.current = Date.now();
       wordsAtStart.current = tts.chunkIndex;
+      charsAtStart.current = tts.wordCharIndex;
       completedHandled.current = false;
       stopRequested.current = false;
       logEvent('tts_playback', {
         action: 'start',
         rate: speechRate,
         position_pct: Math.round(tts.progress * 100),
+        document_chars: item?.textLength ?? 0,
+        content_language: detectedLang || 'unknown',
+        voice_language: settings?.voiceLanguage?.split('-')[0] || 'device_default',
+        tts_engine: 'system',
+        tts_model: 'android_device',
       });
       void logFirstRetentionEvent('first_tts_started', { source: item?.source ?? 'unknown' });
     }
@@ -195,6 +202,24 @@ export default function ReaderScreen() {
         !stopRequested.current &&
         tts.totalChunks > 0 &&
         tts.chunkIndex >= tts.totalChunks - 1;
+
+      // Some OEM TTS engines omit word-boundary callbacks.  Use the current
+      // chunk offset as a lower-bound estimate in that case, and the document
+      // length after natural completion.  Only numeric totals are sent to
+      // Firebase; the spoken text never leaves the device.
+      const currentChar = Math.max(tts.wordCharIndex, tts.currentIndex);
+      const sessionEndChar = isComplete ? (item?.textLength ?? currentChar) : currentChar;
+      const charsSpoken = Math.max(0, sessionEndChar - charsAtStart.current);
+      logEvent('tts_usage', {
+        action: isComplete ? 'complete' : (tts.isPaused ? 'pause' : 'stop'),
+        chars_spoken: charsSpoken,
+        document_chars: item?.textLength ?? 0,
+        duration_sec: elapsed,
+        content_language: detectedLang || 'unknown',
+        voice_language: settings?.voiceLanguage?.split('-')[0] || 'device_default',
+        tts_engine: 'system',
+        tts_model: 'android_device',
+      });
 
       if (isComplete && !completedHandled.current) {
         completedHandled.current = true;
@@ -232,16 +257,20 @@ export default function ReaderScreen() {
     if (tts.isPlaying) tts.play();
   };
 
-  const handleVoiceSelect = async (voiceId: string | undefined) => {
+  const handleVoiceSelect = async (voiceId: string | undefined, voiceLanguage?: string) => {
     setCurrentVoiceId(voiceId);
-    setSettings((current) => current ? { ...current, voiceId, ttsEngine: 'system' } : current);
-    await saveSettings({ voiceId, ttsEngine: 'system' });
+    setSettings((current) => current ? { ...current, voiceId, voiceLanguage, ttsEngine: 'system' } : current);
+    await saveSettings({ voiceId, voiceLanguage, ttsEngine: 'system' });
     if (voiceId) {
       setVoiceLabel('Selected device voice');
-      logEvent('voice_changed', { language: 'system', voice: voiceId, is_default: false });
+      logEvent('voice_changed', {
+        tts_engine: 'system',
+        voice_language: voiceLanguage?.split('-')[0] || 'unknown',
+        is_default: false,
+      });
     } else {
       setVoiceLabel('Device default voice');
-      logEvent('voice_changed', { language: 'default', is_default: true });
+      logEvent('voice_changed', { tts_engine: 'system', voice_language: 'device_default', is_default: true });
     }
 
     if (tts.isPlaying) {
@@ -286,10 +315,10 @@ export default function ReaderScreen() {
     if (!tts.isPlaying && highlightIndex > 0) savePosition();
   }, [tts.isPlaying, savePosition, highlightIndex]);
 
-  // Persist progress continuously while playing so a killed process or
-  // crash never loses the user's place. Debounced to avoid hammering
-  // AsyncStorage on every word boundary. A ref keeps the interval calling
-  // the latest savePosition (which closes over the newest highlightIndex).
+  // Persist progress during playback without serializing the library index at
+  // every word boundary. Saving less often lowers background I/O and battery
+  // use; the AppState handler below still writes immediately when the app
+  // leaves the foreground.
   const savePositionRef = useRef(savePosition);
   useEffect(() => {
     savePositionRef.current = savePosition;
@@ -299,9 +328,16 @@ export default function ReaderScreen() {
     if (!tts.isPlaying) return;
     const interval = setInterval(() => {
       savePositionRef.current();
-    }, 4000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [tts.isPlaying]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') void savePositionRef.current();
+    });
+    return () => subscription.remove();
+  }, []);
 
   const handlePlay = () => {
     if (item?.position && item.position > 0) {
@@ -344,7 +380,7 @@ export default function ReaderScreen() {
     );
   }
 
-  const wordCount = item.text.split(/\s+/).length;
+  const wordCount = item.wordCount;
   const estMinutes = Math.ceil(wordCount / (150 * speechRate));
 
   return (

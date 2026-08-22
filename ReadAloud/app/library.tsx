@@ -19,7 +19,7 @@ import { logEvent } from '@/utils/analytics';
 export default function LibraryScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { items, loading, removeItem } = useLibrary();
+  const { items, loading, removeItem, removeItems } = useLibrary();
   const [search, setSearch] = useState('');
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -74,8 +74,8 @@ export default function LibraryScreen() {
                   bulk: true,
                 });
               }
-              await removeItem(id);
             }
+            await removeItems(selectedIds);
             setSelectedIds(new Set());
             setSelecting(false);
           },

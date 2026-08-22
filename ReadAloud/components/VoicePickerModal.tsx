@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import * as EdgeTTS from '@/utils/edgeTTS';
 import * as Speech from 'expo-speech';
+import { logEvent } from '@/utils/analytics';
 import type { EdgeSpeechVoice } from '@/utils/edgeTTS';
 import { getSherpaVoices, SherpaVoice, isModelReady, initSherpaTTS, sherpaSpeak, sherpaStop, extractBundledModel } from '@/utils/sherpaTTS';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +22,7 @@ interface Props {
   currentVoiceId?: string;
   currentEngine?: TTSEngine;
   speechRate: number;
-  onSelect: (voiceId: string | undefined) => void;
+  onSelect: (voiceId: string | undefined, language?: string) => void;
   onEngineChange?: (engine: TTSEngine) => void;
   onClose: () => void;
 }
@@ -103,6 +104,9 @@ export default function VoicePickerModal({
   }, [visible, engine]);
 
   const previewVoice = useCallback((voiceId: string | undefined, language: string) => {
+    // Track whether previews are usable by locale/engine without collecting a
+    // device-specific voice identifier or any spoken text.
+    const previewTelemetry = { tts_engine: engine, voice_language: language.split('-')[0] || 'unknown' };
     if (engine === 'sherpa') {
       sherpaStop();
       setPreviewError(null);
@@ -116,6 +120,7 @@ export default function VoicePickerModal({
             setSherpaModelProgress(null);
           }
           await initSherpaTTS();
+          logEvent('voice_preview', { ...previewTelemetry, result: 'started' });
           sherpaSpeak(getSamplePhrase(language), {
             voiceId: numId,
             rate: speechRate,
@@ -126,6 +131,7 @@ export default function VoicePickerModal({
               setPlayingId(null);
               setSherpaModelProgress(null);
               setPreviewError(msg);
+              logEvent('voice_preview', { ...previewTelemetry, result: 'error' });
               Alert.alert('Sherpa TTS Error', msg);
             },
           });
@@ -134,6 +140,7 @@ export default function VoicePickerModal({
           setPlayingId(null);
           setSherpaModelProgress(null);
           setPreviewError(msg);
+          logEvent('voice_preview', { ...previewTelemetry, result: 'error' });
           Alert.alert('Sherpa TTS Error', msg);
         }
       };
@@ -145,17 +152,23 @@ export default function VoicePickerModal({
     if (engine === 'system') {
       setPreviewError(null);
       setPlayingId(voiceId ?? '__default');
+      logEvent('voice_preview', { ...previewTelemetry, result: 'started' });
       Speech.speak(getSamplePhrase(language), {
         rate: speechRate,
         voice: voiceId,
         onDone: () => setPlayingId(null),
         onStopped: () => setPlayingId(null),
-        onError: () => { setPlayingId(null); setPreviewError('Standard voice preview failed.'); },
+        onError: () => {
+          setPlayingId(null);
+          setPreviewError('Standard voice preview failed.');
+          logEvent('voice_preview', { ...previewTelemetry, result: 'error' });
+        },
       } as any);
       return;
     }
     setPreviewError(null);
     setPlayingId(voiceId ?? '__default');
+    logEvent('voice_preview', { ...previewTelemetry, result: 'started' });
     EdgeTTS.speak(getSamplePhrase(language), {
       rate: speechRate,
       voice: voiceId || 'en-US-AriaNeural',
@@ -164,6 +177,7 @@ export default function VoicePickerModal({
       onError: () => {
         setPlayingId(null);
         setPreviewError('Preview unavailable. Check your internet connection and try again.');
+        logEvent('voice_preview', { ...previewTelemetry, result: 'error' });
       },
     });
   }, [speechRate, engine]);
@@ -265,7 +279,7 @@ export default function VoicePickerModal({
           isSelected={currentVoiceId === voiceIdStr}
           isPlaying={playingId === voiceIdStr}
           colors={colors}
-          onSelect={() => onSelect(voiceIdStr)}
+          onSelect={() => onSelect(voiceIdStr, voice.language)}
           onPlay={() => previewVoice(voiceIdStr, voice.language)}
         />
       );
@@ -280,7 +294,7 @@ export default function VoicePickerModal({
         isSelected={currentVoiceId === voice.identifier}
         isPlaying={playingId === voice.identifier}
         colors={colors}
-        onSelect={() => onSelect(voice.identifier)}
+        onSelect={() => onSelect(voice.identifier, voice.language)}
         onPlay={() => previewVoice(voice.identifier, voice.language)}
       />
     );

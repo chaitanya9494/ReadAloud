@@ -77,7 +77,9 @@ export function setAnalyticsCollectionEnabled(enabled: boolean): void {
   const analyticsSdk = loadAnalytics();
   if (a && analyticsSdk) {
     try {
-      void analyticsSdk.setAnalyticsCollectionEnabled(a, enabled);
+      void analyticsSdk.setAnalyticsCollectionEnabled(a, enabled).catch(() => {
+        /* analytics is optional; native setup failures must not affect the app */
+      });
     } catch {
       /* noop */
     }
@@ -86,7 +88,9 @@ export function setAnalyticsCollectionEnabled(enabled: boolean): void {
   const crashlyticsSdk = loadCrashlytics();
   if (c && crashlyticsSdk) {
     try {
-      void crashlyticsSdk.setCrashlyticsCollectionEnabled(c, enabled);
+      void crashlyticsSdk.setCrashlyticsCollectionEnabled(c, enabled).catch(() => {
+        /* crash reporting is optional; native setup failures must not affect the app */
+      });
     } catch {
       /* noop */
     }
@@ -124,7 +128,9 @@ export function logEvent(name: string, params?: Record<string, any>): void {
   const sdk = loadAnalytics();
   if (!a || !sdk) return;
   try {
-    void sdk.logEvent(a, name, params);
+    void sdk.logEvent(a, name, params).catch(() => {
+      /* analytics is optional */
+    });
   } catch {
     /* swallow — analytics must never break app flow */
   }
@@ -142,7 +148,9 @@ export function setUserProp(key: string, value: string | null): void {
   const sdk = loadAnalytics();
   if (!a || !sdk) return;
   try {
-    void sdk.setUserProperty(a, key, value);
+    void sdk.setUserProperty(a, key, value).catch(() => {
+      /* analytics is optional */
+    });
   } catch {
     /* noop */
   }
@@ -154,7 +162,9 @@ export function setUserId(id: string | null): void {
   const sdk = loadAnalytics();
   if (!a || !sdk) return;
   try {
-    void sdk.setUserId(a, id);
+    void sdk.setUserId(a, id).catch(() => {
+      /* analytics is optional */
+    });
   } catch {
     /* noop */
   }
@@ -235,7 +245,9 @@ export function startTrace(name: string) {
       };
     }
     const activeTrace = sdk.trace(p, name);
-    void activeTrace.start();
+    void activeTrace.start().catch(() => {
+      /* performance telemetry is optional */
+    });
     return activeTrace;
   } catch {
     return {

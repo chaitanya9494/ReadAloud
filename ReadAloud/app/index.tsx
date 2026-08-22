@@ -16,8 +16,9 @@ import { extractSharedText, getInitialSharedText } from '@/utils/shareIntent';
 import { detectLanguage } from '@/utils/langDetect';
 import { logEvent } from '@/utils/analytics';
 import { logFirstRetentionEvent } from '@/utils/retention';
-import { requestReview, logReviewTapped } from '@/utils/review';
-import { MAX_DOCUMENT_CHARS } from '@/utils/storage';
+import { requestReview, shouldPromptForReview, logReviewTapped } from '@/utils/review';
+import { countWords, getStats, MAX_DOCUMENT_CHARS } from '@/utils/storage';
+import { checkForUpdate, startFlexibleUpdate } from '@/utils/updates';
 
 export default function HomeScreen() {
   const { colors } = useTheme();
@@ -25,7 +26,46 @@ export default function HomeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ sharedText?: string }>();
   const [inputText, setInputText] = useState('');
+  const [canPromptForReview, setCanPromptForReview] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [startingUpdate, setStartingUpdate] = useState(false);
   const { addItem, items } = useLibrary();
+
+  // Never ask a brand-new or struggling user for a rating.  The prompt is
+  // available only after meaningful, successful use; its wording remains
+  // neutral and users can always ignore it.
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const stats = await getStats();
+        const allowed = await shouldPromptForReview({
+          libraryCount: items.length,
+          totalSecondsListened: stats.totalSecondsListened,
+          totalSessions: stats.totalSessions,
+        });
+        if (active) setCanPromptForReview(allowed);
+      } catch {
+        if (active) setCanPromptForReview(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [items.length]);
+
+  // A flexible Play update is always user initiated.  This card is shown only
+  // when Play confirms an update, so it never interrupts reading or appears
+  // for sideloaded/debug builds where In-App Updates are unavailable.
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const result = await checkForUpdate();
+      if (active && result.shouldUpdate) {
+        setUpdateAvailable(true);
+        logEvent('update_prompt_shown', { screen: 'home' });
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   // Handle shared text from other apps (query param)
   useEffect(() => {
@@ -51,7 +91,7 @@ export default function HomeScreen() {
     if (!inputText.trim()) return;
     const trimmed = inputText.trim();
     if (trimmed.length > MAX_DOCUMENT_CHARS) {
-      Alert.alert('Document too large', 'Please use text under 1,000,000 characters so Loudify stays responsive on all devices.');
+      Alert.alert('Document too large', 'Please use text under 300,000 characters so Loudify stays responsive on all devices.');
       return;
     }
     const source = params.sharedText ? 'share' : 'paste';
@@ -62,7 +102,8 @@ export default function HomeScreen() {
     );
     logEvent('content_opened', {
       source,
-      word_count: trimmed.split(/\s+/).length,
+      word_count: countWords(trimmed),
+      character_count: trimmed.length,
       language: detectLanguage(trimmed),
     });
     void logFirstRetentionEvent('first_content_opened', { source });
@@ -72,14 +113,15 @@ export default function HomeScreen() {
 
   const handleFileLoaded = async (text: string, fileName: string) => {
     if (text.length > MAX_DOCUMENT_CHARS) {
-      Alert.alert('Document too large', 'Please use a document under 1,000,000 characters so Loudify stays responsive on all devices.');
+      Alert.alert('Document too large', 'Please use a document under 300,000 characters so Loudify stays responsive on all devices.');
       return;
     }
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
     logEvent('content_opened', {
       source: 'file',
       file_type: ext,
-      word_count: text.split(/\s+/).length,
+      word_count: countWords(text),
+      character_count: text.length,
       language: detectLanguage(text),
     });
     void logFirstRetentionEvent('first_content_opened', { source: 'file' });
@@ -102,8 +144,22 @@ export default function HomeScreen() {
     : 0;
 
   // Live word/char count
-  const wordCount = inputText.trim() ? inputText.trim().split(/\s+/).length : 0;
+  const wordCount = countWords(inputText);
   const charCount = inputText.length;
+
+  const handleStartUpdate = async () => {
+    if (startingUpdate) return;
+    setStartingUpdate(true);
+    logEvent('update_prompt_action', { screen: 'home', action: 'update_now' });
+    try {
+      const status = await startFlexibleUpdate();
+      if (status === 'unavailable' || status === 'failed') {
+        Alert.alert('Update unavailable', 'Please try again later from Google Play.');
+      }
+    } finally {
+      setStartingUpdate(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -143,6 +199,32 @@ export default function HomeScreen() {
             No accounts. No limits. No data leaves your device.
           </Text>
         </View>
+
+        {updateAvailable && (
+          <View style={[styles.updateBanner, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+            <Ionicons name="arrow-up-circle-outline" size={24} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.updateTitle, { color: colors.text }]}>Update available</Text>
+              <Text style={[styles.updateBody, { color: colors.textSecondary }]}>Get the latest stability improvements.</Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleStartUpdate}
+              disabled={startingUpdate}
+              style={[styles.updateButton, { backgroundColor: colors.primary }]}
+              accessibilityLabel="Update Loudify now"
+              accessibilityRole="button"
+            >
+              <Text style={styles.updateButtonText}>{startingUpdate ? 'Starting...' : 'Update'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { setUpdateAvailable(false); logEvent('update_prompt_action', { screen: 'home', action: 'later' }); }}
+              accessibilityLabel="Remind me about the update later"
+              accessibilityRole="button"
+            >
+              <Ionicons name="close" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Continue Listening */}
         {continueItem && (
@@ -220,7 +302,7 @@ export default function HomeScreen() {
         <FilePickerButton onTextLoaded={handleFileLoaded} />
 
         {/* Review banner */}
-        <TouchableOpacity
+        {canPromptForReview && <TouchableOpacity
           onPress={() => {
             logReviewTapped('home');
             requestReview('home');
@@ -232,7 +314,7 @@ export default function HomeScreen() {
           <Ionicons name="star-outline" size={20} color={colors.warning} />
           <Text style={[styles.reviewBannerText, { color: colors.text }]}>Enjoying Loudify?</Text>
           <Text style={[styles.reviewBannerLink, { color: colors.primary }]}>Rate us</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
 
         {/* Recent items */}
         {recentItems.length > 0 && (
@@ -327,6 +409,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: Spacing.md,
   },
+  updateBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    padding: Spacing.md, borderRadius: 12, borderWidth: 1, marginBottom: Spacing.md,
+  },
+  updateTitle: { fontSize: FontSize.sm, fontWeight: '700' },
+  updateBody: { fontSize: FontSize.xs, marginTop: 2 },
+  updateButton: { paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs, borderRadius: 8 },
+  updateButtonText: { color: '#fff', fontSize: FontSize.xs, fontWeight: '700' },
   continueIcon: {
     width: 40,
     height: 40,

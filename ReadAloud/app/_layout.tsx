@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import Constants from 'expo-constants';
 import * as SplashScreen from 'expo-splash-screen';
 import * as FileSystem from 'expo-file-system/legacy';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -97,7 +98,9 @@ function AppStack() {
         theme: settings.theme,
         engine: settings.ttsEngine,
         install_cohort: installCohort,
-        app_version: '1.3.0',
+        // Do not hard-code the app version: release comparisons in Firebase
+        // must identify the APK/AAB actually running on the user's device.
+        app_version: Constants.nativeAppVersion || Constants.expoConfig?.version || 'unknown',
       });
 
       // Anonymous pseudo-user ID (no PII, resettable)

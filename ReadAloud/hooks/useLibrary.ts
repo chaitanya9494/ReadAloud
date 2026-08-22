@@ -5,8 +5,10 @@ import {
   saveLibraryItem,
   saveLibraryProgress,
   deleteLibraryItem,
+  deleteLibraryItems,
   LibraryItem,
   LibraryItemSummary,
+  countWords,
 } from '@/utils/storage';
 import { generateId } from '@/utils/fileParser';
 
@@ -39,7 +41,7 @@ export function useLibrary() {
         title,
         text,
         textLength: text.length,
-        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+        wordCount: countWords(text),
         position: 0,
         createdAt: Date.now(),
         lastReadAt: Date.now(),
@@ -71,5 +73,13 @@ export function useLibrary() {
     [refresh]
   );
 
-  return { items, loading, addItem, updatePosition, removeItem, refresh };
+  const removeItems = useCallback(
+    async (ids: Iterable<string>) => {
+      await deleteLibraryItems(ids);
+      await refresh();
+    },
+    [refresh]
+  );
+
+  return { items, loading, addItem, updatePosition, removeItem, removeItems, refresh };
 }
