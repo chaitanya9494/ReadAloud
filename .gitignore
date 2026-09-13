@@ -1,0 +1,14 @@
+# Local build caches and dependency installs
+/.gradle-release-cache/
+/node_modules/
+
+# Signing material and local package-manager configuration
+/keys/
+/.npmrc
+
+# Locally retained release bundles and QA artifacts
+/releases/
+/Screenshots/
+/scripts/
+/com.loudify.app_feedback.pdf
+/com.loudify.app_production.pdf

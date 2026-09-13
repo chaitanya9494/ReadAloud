@@ -3,7 +3,7 @@
     "name": "Loudify: Text to Speech Reader",
     "slug": "loudify",
     "version": "1.4.4",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "loudify",
     "userInterfaceStyle": "automatic",
@@ -15,7 +15,7 @@
     },
     "newSplashScreen": true,
     "android": {
-      "versionCode": 26,
+      "versionCode": 28,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/ic_launcher_foreground.png",
@@ -79,7 +79,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash.png",
-          "imageWidth": 400,
+          "imageWidth": 200,
           "backgroundColor": "#1a1a2e"
         }
       ],
@@ -101,6 +101,7 @@
       "@react-native-firebase/crashlytics",
       "@react-native-firebase/perf",
       "./plugins/strip-media-permissions",
+      "./plugins/with-large-screen-support",
       "./plugins/with-tts-voice-info"
     ],
     "extra": {
